@@ -230,7 +230,7 @@ fun CameraScreen(viewModel: CameraViewModel, modifier: Modifier = Modifier) {
                 Text(if (isRecording) "Stop Recording" else "Record")
             }
             Button(onClick = { saveCurrentFrame(viewModel) }, enabled = isConnected) {
-                Text("Save Frame")
+                Text("Save")
             }
         }
     }
