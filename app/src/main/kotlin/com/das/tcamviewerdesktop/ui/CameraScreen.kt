@@ -31,8 +31,6 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.SnackbarHost
-import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TextField
@@ -42,7 +40,6 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -58,7 +55,6 @@ import com.das.tcamviewerdesktop.constants.Constants
 import com.das.tcamviewerdesktop.model.CameraViewModel
 import com.das.tcamviewerdesktop.model.MeasurementMode
 import com.das.tcamviewerdesktop.model.Rect
-import kotlinx.coroutines.launch
 import kotlin.math.hypot
 import kotlin.math.roundToInt
 
@@ -69,7 +65,7 @@ private const val DISPLAY_SCALE = 4
  *  Palette/units/measurement-mode/camera-config settings live on [SettingsScreen] instead —
  *  mirrors the Android app's split between CameraScreen and SettingsScreen. */
 @Composable
-fun CameraScreen(viewModel: CameraViewModel, modifier: Modifier = Modifier) {
+fun CameraScreen(viewModel: CameraViewModel, modifier: Modifier = Modifier, onShowMessage: (String) -> Unit = {}) {
     val isConnected by viewModel.isConnected.collectAsState()
     val isConnecting by viewModel.isConnecting.collectAsState()
     val isStreaming by viewModel.isStreaming.collectAsState()
@@ -81,8 +77,6 @@ fun CameraScreen(viewModel: CameraViewModel, modifier: Modifier = Modifier) {
     var streamMenuExpanded by remember { mutableStateOf(false) }
     var showTimeLapseDialog by remember { mutableStateOf(false) }
     var showStopSaveDialog by remember { mutableStateOf(false) }
-    val snackbarHostState = remember { SnackbarHostState() }
-    val coroutineScope = rememberCoroutineScope()
 
     val bitmap by viewModel.currentBitmap.collectAsState()
     val spotTemp by viewModel.spotmeterTemp.collectAsState()
@@ -98,8 +92,7 @@ fun CameraScreen(viewModel: CameraViewModel, modifier: Modifier = Modifier) {
     val displayW = Constants.IMAGE_WIDTH * DISPLAY_SCALE
     val displayH = Constants.IMAGE_HEIGHT * DISPLAY_SCALE
 
-    Box(modifier = modifier) {
-    Column(modifier = Modifier.fillMaxSize(), horizontalAlignment = Alignment.CenterHorizontally) {
+    Column(modifier = modifier, horizontalAlignment = Alignment.CenterHorizontally) {
         Column(
             modifier = Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState()).padding(16.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
@@ -251,9 +244,9 @@ fun CameraScreen(viewModel: CameraViewModel, modifier: Modifier = Modifier) {
                 onClick = {
                     val dto = currentImageDto ?: return@Button
                     if (runCatching { cameraUtils.saveTjsn(dto) }.getOrDefault(false)) {
-                        coroutineScope.launch { snackbarHostState.showSnackbar("Image saved as ${dto.filename}") }
+                        onShowMessage("Image saved as ${dto.filename}")
                     } else {
-                        coroutineScope.launch { snackbarHostState.showSnackbar("Save failed") }
+                        onShowMessage("Save failed")
                     }
                 },
                 enabled = currentImageDto != null,
@@ -336,6 +329,7 @@ fun CameraScreen(viewModel: CameraViewModel, modifier: Modifier = Modifier) {
                 TextButton(onClick = {
                     showStopSaveDialog = false
                     if (isTimeLapsing) viewModel.stopTimeLapse(save = true) else viewModel.stopRecording(save = true)
+                    onShowMessage(if (isTimeLapsing) "Time lapse saved" else "Recording saved")
                 }) { Text("Save") }
             },
             dismissButton = {
@@ -345,9 +339,6 @@ fun CameraScreen(viewModel: CameraViewModel, modifier: Modifier = Modifier) {
                 }) { Text("Discard") }
             },
         )
-    }
-
-    SnackbarHost(hostState = snackbarHostState, modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 72.dp))
     }
 }
 
