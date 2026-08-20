@@ -336,13 +336,13 @@ fun CameraScreen(viewModel: CameraViewModel, modifier: Modifier = Modifier) {
                 TextButton(onClick = {
                     showStopSaveDialog = false
                     if (isTimeLapsing) viewModel.stopTimeLapse(save = true) else viewModel.stopRecording(save = true)
-                }) { Text("Yes") }
+                }) { Text("Save") }
             },
             dismissButton = {
                 TextButton(onClick = {
                     showStopSaveDialog = false
                     if (isTimeLapsing) viewModel.stopTimeLapse(save = false) else viewModel.stopRecording(save = false)
-                }) { Text("No") }
+                }) { Text("Discard") }
             },
         )
     }
