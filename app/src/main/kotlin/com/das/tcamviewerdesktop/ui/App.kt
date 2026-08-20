@@ -115,13 +115,17 @@ fun App(viewModel: CameraViewModel) {
                 )
             }
 
-            // Fires on a time lapse's natural completion (duration elapsed) — shown as a
-            // snackbar, same as every other "something got saved" confirmation, rather than a
-            // blocking dialog. Kept at this app-wide level (not local to CameraScreen) since the
-            // ViewModel's underlying SharedFlow only delivers to whichever collector is active
-            // when it emits, and the user may be on a different tab when a time lapse finishes.
+            // Fires whenever a recording or time lapse is actually saved (stop-and-save, or a
+            // time lapse's natural completion) — shown as a snackbar, same as every other
+            // "something got saved" confirmation, rather than a blocking dialog. Kept at this
+            // app-wide level (not local to CameraScreen) since the ViewModel's underlying
+            // SharedFlow only delivers to whichever collector is active when it emits, and the
+            // user may be on a different tab when a time lapse finishes on its own.
             LaunchedEffect(Unit) {
                 viewModel.timeLapseMessage.collectLatest { showMessage(it) }
+            }
+            LaunchedEffect(Unit) {
+                viewModel.recordingMessage.collectLatest { showMessage(it) }
             }
 
             SnackbarHost(hostState = snackbarHostState, modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 24.dp))

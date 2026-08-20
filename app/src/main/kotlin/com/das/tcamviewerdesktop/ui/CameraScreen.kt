@@ -328,8 +328,10 @@ fun CameraScreen(viewModel: CameraViewModel, modifier: Modifier = Modifier, onSh
             confirmButton = {
                 TextButton(onClick = {
                     showStopSaveDialog = false
+                    // Save confirmation toast fires from the ViewModel (recordingMessage/
+                    // timeLapseMessage, collected in App.kt) once the file is actually written,
+                    // rather than optimistically here.
                     if (isTimeLapsing) viewModel.stopTimeLapse(save = true) else viewModel.stopRecording(save = true)
-                    onShowMessage(if (isTimeLapsing) "Time lapse saved" else "Recording saved")
                 }) { Text("Save") }
             },
             dismissButton = {

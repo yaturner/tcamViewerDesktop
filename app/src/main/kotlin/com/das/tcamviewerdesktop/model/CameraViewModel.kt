@@ -111,6 +111,9 @@ class CameraViewModel {
     private val _timeLapseMessage = MutableSharedFlow<String>(extraBufferCapacity = 1)
     val timeLapseMessage: SharedFlow<String> = _timeLapseMessage.asSharedFlow()
 
+    private val _recordingMessage = MutableSharedFlow<String>(extraBufferCapacity = 1)
+    val recordingMessage: SharedFlow<String> = _recordingMessage.asSharedFlow()
+
     private val _alertMessage = MutableSharedFlow<String>(extraBufferCapacity = 1)
     val alertMessage: SharedFlow<String> = _alertMessage.asSharedFlow()
 
@@ -615,7 +618,8 @@ class CameraViewModel {
                     log.log(Level.WARNING, "Time lapse error", e)
                 } finally {
                     val endMs = System.currentTimeMillis()
-                    if (discardTimeLapse) {
+                    val wasDiscarded = discardTimeLapse
+                    if (wasDiscarded) {
                         runCatching { stream?.close() }
                         file?.delete()
                     } else {
@@ -627,14 +631,15 @@ class CameraViewModel {
                     discardTimeLapse = false
                     _isTimeLapseCapturing.value = false
                     _isTimeLapsing.value = false
-                    if (naturalCompletion) {
+                    if (!wasDiscarded) {
                         val samples = _tempHistory.value
                         val primaryLabel = if (_measurementMode.value == MeasurementMode.REGION) "Avg" else "Spot"
                         val chartSaved =
                             samples.size >= 2 &&
                                 cameraUtils.saveTempChart(samples, cameraUtils.settingIsCelsius, primaryLabel)
-                        val suffix = if (chartSaved) ", chart saved" else ""
-                        _timeLapseMessage.tryEmit("Time lapse complete — $frameCount frames captured$suffix")
+                        val completionSuffix = if (naturalCompletion) " — $frameCount frames captured" else ""
+                        val chartSuffix = if (chartSaved) ", chart saved" else ""
+                        _timeLapseMessage.tryEmit("Time lapse saved as ${file?.path}$completionSuffix$chartSuffix")
                     }
                     tempHistoryWindowOverrideMs = null
                 }
@@ -715,6 +720,7 @@ class CameraViewModel {
                     if (save) {
                         stream.write(buildFooterJson(recordingStartMs, endMs, count).toByteArray(Charsets.US_ASCII))
                         stream.close()
+                        file?.let { _recordingMessage.tryEmit("Recording saved as ${it.path}") }
                     } else {
                         stream.close()
                         file?.delete()
