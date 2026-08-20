@@ -245,6 +245,9 @@ class CameraViewModel {
             settingsManager.spotmeterFlow.collect { v -> _spotmeterEnabled.value = v }
         }
         vmScope.launch {
+            settingsManager.shutterSoundFlow.collect { v -> shutterSoundEnabled = v }
+        }
+        vmScope.launch {
             settingsManager.regionMeasurementFlow.collect { enabled ->
                 _measurementMode.value = if (enabled) MeasurementMode.REGION else MeasurementMode.POINT
                 seedDefaultRegionIfNeeded()

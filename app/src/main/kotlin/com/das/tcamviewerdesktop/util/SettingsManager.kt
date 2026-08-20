@@ -37,6 +37,9 @@ class SettingsManager {
     private val _temperatureUnit = stringFlow("temperature_unit", "Celsius")
     val temperatureUnitFlow: StateFlow<String> = _temperatureUnit.asStateFlow()
 
+    private val _shutterSound = boolFlow("shutter_sound", true)
+    val shutterSoundFlow: StateFlow<Boolean> = _shutterSound.asStateFlow()
+
     private val _spotmeter = boolFlow("spotmeter", true)
     val spotmeterFlow: StateFlow<Boolean> = _spotmeter.asStateFlow()
 
@@ -75,6 +78,8 @@ class SettingsManager {
     fun saveMaxValue(value: String) { prefs.put("max_value", value); _maxValue.value = value }
 
     fun saveTemperatureUnit(unit: String) { prefs.put("temperature_unit", unit); _temperatureUnit.value = unit }
+
+    fun saveShutterSound(enabled: Boolean) { prefs.putBoolean("shutter_sound", enabled); _shutterSound.value = enabled }
 
     fun saveSpotmeter(enabled: Boolean) { prefs.putBoolean("spotmeter", enabled); _spotmeter.value = enabled }
 
