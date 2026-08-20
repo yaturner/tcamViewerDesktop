@@ -17,20 +17,33 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Camera
 import androidx.compose.material.icons.filled.Clear
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.material3.TextField
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
@@ -45,6 +58,7 @@ import com.das.tcamviewerdesktop.constants.Constants
 import com.das.tcamviewerdesktop.model.CameraViewModel
 import com.das.tcamviewerdesktop.model.MeasurementMode
 import com.das.tcamviewerdesktop.model.Rect
+import kotlinx.coroutines.launch
 import kotlin.math.hypot
 import kotlin.math.roundToInt
 
@@ -60,6 +74,15 @@ fun CameraScreen(viewModel: CameraViewModel, modifier: Modifier = Modifier) {
     val isConnecting by viewModel.isConnecting.collectAsState()
     val isStreaming by viewModel.isStreaming.collectAsState()
     val isRecording by viewModel.isRecording.collectAsState()
+    val isTimeLapsing by viewModel.isTimeLapsing.collectAsState()
+    val isTimeLapseCapturing by viewModel.isTimeLapseCapturing.collectAsState()
+    val currentImageDto by viewModel.currentImageDto.collectAsState()
+
+    var streamMenuExpanded by remember { mutableStateOf(false) }
+    var showTimeLapseDialog by remember { mutableStateOf(false) }
+    var showStopSaveDialog by remember { mutableStateOf(false) }
+    val snackbarHostState = remember { SnackbarHostState() }
+    val coroutineScope = rememberCoroutineScope()
 
     val bitmap by viewModel.currentBitmap.collectAsState()
     val spotTemp by viewModel.spotmeterTemp.collectAsState()
@@ -75,7 +98,8 @@ fun CameraScreen(viewModel: CameraViewModel, modifier: Modifier = Modifier) {
     val displayW = Constants.IMAGE_WIDTH * DISPLAY_SCALE
     val displayH = Constants.IMAGE_HEIGHT * DISPLAY_SCALE
 
-    Column(modifier = modifier, horizontalAlignment = Alignment.CenterHorizontally) {
+    Box(modifier = modifier) {
+    Column(modifier = Modifier.fillMaxSize(), horizontalAlignment = Alignment.CenterHorizontally) {
         Column(
             modifier = Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState()).padding(16.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
@@ -218,27 +242,202 @@ fun CameraScreen(viewModel: CameraViewModel, modifier: Modifier = Modifier) {
                     },
                 )
             }
-            Button(onClick = { viewModel.getImage() }, enabled = isConnected) {
+            Button(onClick = { viewModel.getImage() }, enabled = isConnected && !isStreaming) {
                 Icon(Icons.Filled.Camera, contentDescription = null)
                 Spacer(Modifier.width(4.dp))
                 Text("Get")
             }
-            Button(onClick = { viewModel.toggleStreaming() }, enabled = isConnected) {
-                Text(if (isStreaming) "Stop Stream" else "Stream")
-            }
-            Button(onClick = { viewModel.toggleRecording() }, enabled = isConnected) {
-                Text(if (isRecording) "Stop Recording" else "Record")
-            }
-            Button(onClick = { saveCurrentFrame(viewModel) }, enabled = isConnected) {
+            Button(
+                onClick = {
+                    val dto = currentImageDto ?: return@Button
+                    if (runCatching { cameraUtils.saveTjsn(dto) }.getOrDefault(false)) {
+                        coroutineScope.launch { snackbarHostState.showSnackbar("Image saved as ${dto.filename}") }
+                    } else {
+                        coroutineScope.launch { snackbarHostState.showSnackbar("Save failed") }
+                    }
+                },
+                enabled = currentImageDto != null,
+            ) {
                 Text("Save")
+            }
+
+            // Stop button (active) or Stream dropdown (idle) — mirrors the Android app's
+            // Stream/Record/Time Lapse choice menu.
+            if (isStreaming || isRecording || isTimeLapsing) {
+                Button(onClick = {
+                    if (isTimeLapsing || isRecording) {
+                        showStopSaveDialog = true
+                    } else {
+                        viewModel.toggleStreaming()
+                    }
+                }) {
+                    Text(
+                        when {
+                            isTimeLapsing && isTimeLapseCapturing -> "Rec"
+                            isTimeLapsing -> "Stream"
+                            else -> "Stop"
+                        },
+                    )
+                }
+            } else {
+                val canStream = isConnected && currentImageDto != null
+                Box {
+                    Button(onClick = { streamMenuExpanded = true }, enabled = canStream) {
+                        Text("Stream")
+                    }
+                    DropdownMenu(expanded = streamMenuExpanded, onDismissRequest = { streamMenuExpanded = false }) {
+                        DropdownMenuItem(
+                            text = { Text("Start") },
+                            enabled = canStream,
+                            onClick = {
+                                viewModel.toggleStreaming()
+                                streamMenuExpanded = false
+                            },
+                        )
+                        DropdownMenuItem(
+                            text = { Text("Record") },
+                            enabled = canStream,
+                            onClick = {
+                                viewModel.toggleRecording()
+                                streamMenuExpanded = false
+                            },
+                        )
+                        DropdownMenuItem(
+                            text = { Text("Time Lapse") },
+                            enabled = canStream,
+                            onClick = {
+                                streamMenuExpanded = false
+                                showTimeLapseDialog = true
+                            },
+                        )
+                    }
+                }
             }
         }
     }
+
+    if (showTimeLapseDialog) {
+        TimeLapseDialog(
+            onConfirm = { intervalSec, durationSec ->
+                showTimeLapseDialog = false
+                viewModel.startTimeLapse(intervalSec, durationSec)
+            },
+            onDismiss = { showTimeLapseDialog = false },
+        )
+    }
+
+    if (showStopSaveDialog) {
+        val label = if (isTimeLapsing) "time lapse" else "recording"
+        AlertDialog(
+            onDismissRequest = { showStopSaveDialog = false },
+            title = { Text("Save $label?") },
+            text = { Text("Do you want to save the $label, or discard it?") },
+            confirmButton = {
+                TextButton(onClick = {
+                    showStopSaveDialog = false
+                    if (isTimeLapsing) viewModel.stopTimeLapse(save = true) else viewModel.stopRecording(save = true)
+                }) { Text("Yes") }
+            },
+            dismissButton = {
+                TextButton(onClick = {
+                    showStopSaveDialog = false
+                    if (isTimeLapsing) viewModel.stopTimeLapse(save = false) else viewModel.stopRecording(save = false)
+                }) { Text("No") }
+            },
+        )
+    }
+
+    SnackbarHost(hostState = snackbarHostState, modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 72.dp))
+    }
 }
 
-private fun saveCurrentFrame(viewModel: CameraViewModel) {
-    val dto = viewModel.currentImageDto.value ?: return
-    runCatching { cameraUtils.saveTjsn(dto) }
+private val TIMELAPSE_INTERVALS = listOf(
+    1 to "1 second",
+    2 to "2 seconds",
+    5 to "5 seconds",
+    10 to "10 seconds",
+    30 to "30 seconds",
+    60 to "1 minute",
+    120 to "2 minutes",
+    300 to "5 minutes",
+)
+
+private val TIMELAPSE_DURATIONS = listOf(
+    30 to "30 seconds",
+    60 to "1 minute",
+    120 to "2 minutes",
+    300 to "5 minutes",
+    600 to "10 minutes",
+    1800 to "30 minutes",
+    3600 to "1 hour",
+    7200 to "2 hours",
+    14400 to "4 hours",
+    28800 to "8 hours",
+    43200 to "12 hours",
+    86400 to "24 hours",
+)
+
+@Composable
+private fun TimeLapseDialog(onConfirm: (intervalSec: Int, durationSec: Int) -> Unit, onDismiss: () -> Unit) {
+    var intervalIndex by remember { mutableIntStateOf(2) } // default: 5 seconds
+    var durationIndex by remember { mutableIntStateOf(4) } // default: 10 minutes
+    var intervalExpanded by remember { mutableStateOf(false) }
+    var durationExpanded by remember { mutableStateOf(false) }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Time Lapse") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                Text("Capture one frame from the camera at the selected interval for the selected duration.")
+
+                Box {
+                    TextField(
+                        value = TIMELAPSE_INTERVALS[intervalIndex].second,
+                        onValueChange = {},
+                        readOnly = true,
+                        label = { Text("Interval") },
+                        modifier = Modifier.fillMaxWidth().clickable { intervalExpanded = true },
+                    )
+                    DropdownMenu(expanded = intervalExpanded, onDismissRequest = { intervalExpanded = false }) {
+                        TIMELAPSE_INTERVALS.forEachIndexed { i, (_, label) ->
+                            DropdownMenuItem(text = { Text(label) }, onClick = {
+                                intervalIndex = i
+                                intervalExpanded = false
+                            })
+                        }
+                    }
+                }
+
+                Box {
+                    TextField(
+                        value = TIMELAPSE_DURATIONS[durationIndex].second,
+                        onValueChange = {},
+                        readOnly = true,
+                        label = { Text("Duration") },
+                        modifier = Modifier.fillMaxWidth().clickable { durationExpanded = true },
+                    )
+                    DropdownMenu(expanded = durationExpanded, onDismissRequest = { durationExpanded = false }) {
+                        TIMELAPSE_DURATIONS.forEachIndexed { i, (_, label) ->
+                            DropdownMenuItem(text = { Text(label) }, onClick = {
+                                durationIndex = i
+                                durationExpanded = false
+                            })
+                        }
+                    }
+                }
+
+                val frames = TIMELAPSE_DURATIONS[durationIndex].first / TIMELAPSE_INTERVALS[intervalIndex].first
+                Text("$frames frames total", style = MaterialTheme.typography.bodySmall)
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = {
+                onConfirm(TIMELAPSE_INTERVALS[intervalIndex].first, TIMELAPSE_DURATIONS[durationIndex].first)
+            }) { Text("Start") }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
+    )
 }
 
 /** Which part of the region box a drag gesture is manipulating. */
