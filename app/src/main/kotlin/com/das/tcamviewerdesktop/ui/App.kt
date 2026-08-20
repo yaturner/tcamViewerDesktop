@@ -5,6 +5,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.PhotoLibrary
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.ShowChart
 import androidx.compose.material.icons.filled.Videocam
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
@@ -25,7 +26,7 @@ import androidx.compose.ui.Modifier
 import com.das.tcamviewerdesktop.model.CameraViewModel
 import kotlinx.coroutines.flow.collectLatest
 
-private enum class Screen(val label: String) { CAMERA("Camera"), SETTINGS("Settings"), LIBRARY("Library") }
+private enum class Screen(val label: String) { CAMERA("Camera"), SETTINGS("Settings"), LIBRARY("Library"), CHARTS("Charts") }
 
 @Composable
 fun App(viewModel: CameraViewModel) {
@@ -53,11 +54,22 @@ fun App(viewModel: CameraViewModel) {
                         icon = { Icon(Icons.Filled.PhotoLibrary, contentDescription = Screen.LIBRARY.label) },
                         label = { Text(Screen.LIBRARY.label) },
                     )
+                    NavigationRailItem(
+                        selected = screen == Screen.CHARTS,
+                        onClick = { screen = Screen.CHARTS },
+                        icon = { Icon(Icons.Filled.ShowChart, contentDescription = Screen.CHARTS.label) },
+                        label = { Text(Screen.CHARTS.label) },
+                    )
                 }
                 when (screen) {
                     Screen.CAMERA -> CameraScreen(viewModel, modifier = Modifier.fillMaxSize())
-                    Screen.SETTINGS -> SettingsScreen(viewModel, modifier = Modifier.fillMaxSize())
+                    Screen.SETTINGS -> SettingsScreen(
+                        viewModel,
+                        modifier = Modifier.fillMaxSize(),
+                        onNavigateBack = { screen = Screen.CAMERA },
+                    )
                     Screen.LIBRARY -> LibraryScreen(modifier = Modifier.fillMaxSize())
+                    Screen.CHARTS -> ChartsScreen(modifier = Modifier.fillMaxSize())
                 }
             }
         }

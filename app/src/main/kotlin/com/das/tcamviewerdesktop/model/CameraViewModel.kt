@@ -25,7 +25,6 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
-import java.awt.Toolkit
 import java.awt.image.BufferedImage
 import java.io.File
 import java.io.FileOutputStream
@@ -34,13 +33,15 @@ import java.util.Date
 import java.util.Locale
 import java.util.logging.Level
 import java.util.logging.Logger
+import javax.sound.sampled.AudioSystem
+import javax.sound.sampled.LineEvent
 import kotlin.coroutines.coroutineContext
 
 /** Ported from tcamViewer2's Android CameraViewModel. Differences from the Android version:
  *  - No androidx.lifecycle.ViewModel base; owns a plain CoroutineScope, torn down via [close].
  *  - Bitmap -> BufferedImage, android.graphics.Rect -> [Rect].
- *  - Shutter "sound" is a system beep (Toolkit.beep()) instead of a bundled WAV played through
- *    MediaPlayer — no audio asset to bundle for a first desktop port.
+ *  - Shutter sound plays the same bundled `camera_shutter.wav` (app/src/main/resources) via
+ *    javax.sound.sampled.Clip instead of Android's MediaPlayer.
  *  - mDNS auto-discovery ([com.das.tcamviewerdesktop.net.discoverTcamCameras]) uses JmDNS
  *    instead of Android's NsdManager.
  */
@@ -189,7 +190,19 @@ class CameraViewModel {
 
     private fun playShutterSound() {
         try {
-            Toolkit.getDefaultToolkit().beep()
+            val stream = AudioSystem.getAudioInputStream(
+                javaClass.getResourceAsStream("/camera_shutter.wav")
+                    ?: throw java.io.FileNotFoundException("camera_shutter.wav resource missing"),
+            )
+            val clip = AudioSystem.getClip()
+            clip.open(stream)
+            clip.addLineListener { event ->
+                if (event.type == LineEvent.Type.STOP) {
+                    clip.close()
+                    stream.close()
+                }
+            }
+            clip.start()
         } catch (e: Exception) {
             log.log(Level.WARNING, "Shutter sound playback failed", e)
         }

@@ -46,13 +46,14 @@ import com.das.tcamviewerdesktop.net.DiscoveredCamera
 import com.das.tcamviewerdesktop.net.discoverTcamCameras
 import com.das.tcamviewerdesktop.paletteFactory
 import com.das.tcamviewerdesktop.settingsManager
+import com.das.tcamviewerdesktop.util.scanWifiNetworks
 
 /** Settings tab: staged edits (Save/Cancel) over every persisted preference, plus a "Camera
  *  Settings" section (AGC/emissivity/gain, WiFi) that's only meaningful while connected — mirrors
  *  the Android app's SettingsScreen. mDNS "Find tCam Devices" is ported (via JmDNS); WiFi SSID
- *  scanning isn't (no portable desktop equivalent wired up yet). */
+ *  scanning uses `nmcli` (see [scanWifiNetworks]). */
 @Composable
-fun SettingsScreen(viewModel: CameraViewModel, modifier: Modifier = Modifier) {
+fun SettingsScreen(viewModel: CameraViewModel, modifier: Modifier = Modifier, onNavigateBack: () -> Unit = {}) {
     val isConnected by viewModel.isConnected.collectAsState()
     val cameraConfig by viewModel.cameraConfig.collectAsState()
 
@@ -118,24 +119,18 @@ fun SettingsScreen(viewModel: CameraViewModel, modifier: Modifier = Modifier) {
             val emissivityPct = (localEmissivity.toIntOrNull() ?: 90).coerceIn(1, 100)
             viewModel.sendCameraConfig(localAgc, emissivityPct, localGainMode)
         }
+        onNavigateBack()
     }
 
     Column(modifier = modifier.fillMaxSize()) {
-        Row(
+        Text(
+            "Settings",
+            style = MaterialTheme.typography.headlineSmall,
             modifier = Modifier.fillMaxWidth().padding(16.dp),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
-            Text("Settings", style = MaterialTheme.typography.headlineSmall, modifier = Modifier.weight(1f))
-            TextButton(onClick = { resetKey++ }) { Text("Cancel") }
-            Button(
-                onClick = {
-                    if (isConnected && localIp != savedIp) showIpChangeConfirm = true else performSave()
-                },
-            ) { Text("Save") }
-        }
+        )
         HorizontalDivider()
         Column(
-            modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp),
+            modifier = Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState()).padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
             if (isConnected) {
@@ -261,6 +256,22 @@ fun SettingsScreen(viewModel: CameraViewModel, modifier: Modifier = Modifier) {
                 )
             }
         }
+        HorizontalDivider()
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(16.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            TextButton(onClick = {
+                resetKey++
+                onNavigateBack()
+            }) { Text("Cancel") }
+            Button(
+                onClick = {
+                    if (isConnected && localIp != savedIp) showIpChangeConfirm = true else performSave()
+                },
+            ) { Text("Save") }
+        }
     }
 
     if (showIpChangeConfirm) {
@@ -329,8 +340,8 @@ private fun SettingsPaletteDropdown(current: String, onSelect: (String) -> Unit)
     }
 }
 
-/** Basic WiFi configuration dialog — SSID/password/static-IP fields, no SSID scanning (no
- *  portable desktop WiFi-scan API wired up). Saving restarts the camera's WiFi subsystem. */
+/** WiFi configuration dialog — SSID/password/static-IP fields, with an SSID-scan button backed
+ *  by `nmcli` (see [scanWifiNetworks]). Saving restarts the camera's WiFi subsystem. */
 @Composable
 private fun WifiConfigDialog(viewModel: CameraViewModel, onDismiss: () -> Unit) {
     val wifiInfo by viewModel.wifiInfo.collectAsState()
@@ -341,6 +352,7 @@ private fun WifiConfigDialog(viewModel: CameraViewModel, onDismiss: () -> Unit) 
     var staticIp by remember { mutableStateOf("") }
     var staticNetmask by remember { mutableStateOf("") }
     var showSaveConfirm by remember { mutableStateOf(false) }
+    var showSsidScanDialog by remember { mutableStateOf(false) }
 
     LaunchedEffect(wifiInfo) {
         val info = wifiInfo ?: return@LaunchedEffect
@@ -368,7 +380,18 @@ private fun WifiConfigDialog(viewModel: CameraViewModel, onDismiss: () -> Unit) 
                         Text("Camera is Access Point", modifier = Modifier.weight(1f))
                         Switch(checked = isAccessPoint, onCheckedChange = { isAccessPoint = it })
                     }
-                    TextField(value = ssid, onValueChange = { ssid = it }, label = { Text("SSID") }, singleLine = true)
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        TextField(
+                            value = ssid,
+                            onValueChange = { ssid = it },
+                            label = { Text("SSID") },
+                            singleLine = true,
+                            modifier = Modifier.weight(1f),
+                        )
+                        IconButton(onClick = { showSsidScanDialog = true }) {
+                            Icon(Icons.Default.Search, contentDescription = "Scan for networks")
+                        }
+                    }
                     TextField(value = password, onValueChange = { password = it }, label = { Text("Password") }, singleLine = true)
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Text("Use Static IP when Client", modifier = Modifier.weight(1f))
@@ -411,6 +434,65 @@ private fun WifiConfigDialog(viewModel: CameraViewModel, onDismiss: () -> Unit) 
             dismissButton = { TextButton(onClick = { showSaveConfirm = false }) { Text("Cancel") } },
         )
     }
+
+    if (showSsidScanDialog) {
+        SsidScanDialog(
+            onDismiss = { showSsidScanDialog = false },
+            onSelect = { picked ->
+                ssid = picked
+                showSsidScanDialog = false
+            },
+        )
+    }
+}
+
+/** Lists nearby WiFi networks visible to this machine's own radio (via `nmcli`), so the SSID can
+ *  be picked instead of typed. */
+@Composable
+private fun SsidScanDialog(onDismiss: () -> Unit, onSelect: (String) -> Unit) {
+    var networks by remember { mutableStateOf<List<String>>(emptyList()) }
+    var isScanning by remember { mutableStateOf(true) }
+    var selected by remember { mutableStateOf<String?>(null) }
+
+    LaunchedEffect(Unit) {
+        isScanning = true
+        networks = scanWifiNetworks()
+        isScanning = false
+    }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Available Networks") },
+        text = {
+            Column(modifier = Modifier.widthIn(max = 400.dp)) {
+                if (isScanning) {
+                    CircularProgressIndicator(modifier = Modifier.padding(bottom = 12.dp))
+                }
+                if (networks.isEmpty()) {
+                    Text(if (isScanning) "Scanning for networks…" else "No networks found.")
+                } else {
+                    Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
+                        networks.forEach { network ->
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .selectable(selected = selected == network, onClick = { selected = network })
+                                    .padding(vertical = 8.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                RadioButton(selected = selected == network, onClick = { selected = network })
+                                Text(network)
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(enabled = selected != null, onClick = { selected?.let(onSelect) }) { Text("Select") }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
+    )
 }
 
 /** mDNS "Find tCam Devices" dialog — searches for [Constants.SERVICE_TYPE] on the local network

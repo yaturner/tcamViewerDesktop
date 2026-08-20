@@ -4,6 +4,7 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -16,10 +17,13 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Camera
 import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material3.Button
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -40,7 +44,9 @@ import com.das.tcamviewerdesktop.cameraUtils
 import com.das.tcamviewerdesktop.constants.Constants
 import com.das.tcamviewerdesktop.model.CameraViewModel
 import com.das.tcamviewerdesktop.model.MeasurementMode
-import com.das.tcamviewerdesktop.model.TempSample
+import com.das.tcamviewerdesktop.model.Rect
+import kotlin.math.hypot
+import kotlin.math.roundToInt
 
 private const val DISPLAY_SCALE = 4
 
@@ -69,40 +75,11 @@ fun CameraScreen(viewModel: CameraViewModel, modifier: Modifier = Modifier) {
     val displayW = Constants.IMAGE_WIDTH * DISPLAY_SCALE
     val displayH = Constants.IMAGE_HEIGHT * DISPLAY_SCALE
 
-    Column(modifier = modifier.padding(16.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-        Row(
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            modifier = Modifier.fillMaxWidth(),
+    Column(modifier = modifier, horizontalAlignment = Alignment.CenterHorizontally) {
+        Column(
+            modifier = Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState()).padding(16.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
         ) {
-            Button(
-                onClick = { viewModel.toggleConnection() },
-                enabled = !isConnecting,
-            ) {
-                Text(
-                    when {
-                        isConnecting -> "Connecting..."
-                        isConnected -> "Disconnect"
-                        else -> "Connect"
-                    },
-                )
-            }
-            Button(onClick = { viewModel.getImage() }, enabled = isConnected) {
-                Icon(Icons.Filled.Camera, contentDescription = null)
-                Spacer(Modifier.width(4.dp))
-                Text("Get")
-            }
-            Button(onClick = { viewModel.toggleStreaming() }, enabled = isConnected) {
-                Text(if (isStreaming) "Stop Stream" else "Stream")
-            }
-            Button(onClick = { viewModel.toggleRecording() }, enabled = isConnected) {
-                Text(if (isRecording) "Stop Recording" else "Record")
-            }
-            Button(onClick = { saveCurrentFrame(viewModel) }, enabled = isConnected) {
-                Text("Save Frame")
-            }
-        }
-        Spacer(Modifier.height(12.dp))
         Row(horizontalArrangement = Arrangement.SpaceBetween, modifier = Modifier.fillMaxWidth()) {
             Text("Spot: $spotTemp", style = MaterialTheme.typography.bodyLarge)
             Text("Max: $maxTemp", style = MaterialTheme.typography.bodyLarge)
@@ -116,15 +93,46 @@ fun CameraScreen(viewModel: CameraViewModel, modifier: Modifier = Modifier) {
                     .size(displayW.dp, displayH.dp)
                     .background(Color.Black)
                     .border(1.dp, Color.Gray)
-                    .pointerInput(measurementMode, spotmeterEnabled) {
-                        detectTapGestures { offset ->
-                            if (measurementMode == MeasurementMode.POINT && spotmeterEnabled) {
-                                val camX = (offset.x / DISPLAY_SCALE).toInt().coerceIn(0, Constants.IMAGE_WIDTH - 1)
-                                val camY = (offset.y / DISPLAY_SCALE).toInt().coerceIn(0, Constants.IMAGE_HEIGHT - 1)
-                                viewModel.setSpotmeter(camX, camY)
+                    .then(
+                        if (measurementMode == MeasurementMode.POINT) {
+                            if (spotmeterEnabled) {
+                                Modifier.pointerInput(isConnected) {
+                                    if (!isConnected) return@pointerInput
+                                    detectTapGestures { offset ->
+                                        val camX = (offset.x / DISPLAY_SCALE).toInt().coerceIn(0, Constants.IMAGE_WIDTH - 1)
+                                        val camY = (offset.y / DISPLAY_SCALE).toInt().coerceIn(0, Constants.IMAGE_HEIGHT - 1)
+                                        viewModel.setSpotmeter(camX, camY)
+                                    }
+                                }
+                            } else {
+                                Modifier
                             }
-                        }
-                    },
+                        } else {
+                            // Keyed only on isConnected/mode (not the region itself, which changes
+                            // every drag step) — always reads/writes the ViewModel's StateFlow
+                            // directly so the gesture never restarts mid-drag.
+                            Modifier.pointerInput(isConnected, measurementMode) {
+                                if (!isConnected) return@pointerInput
+                                var dragTarget = RegionDragTarget.NONE
+                                detectDragGestures(
+                                    onDragStart = { start ->
+                                        val region = viewModel.measurementRegion.value ?: return@detectDragGestures
+                                        val camX = start.x / DISPLAY_SCALE
+                                        val camY = start.y / DISPLAY_SCALE
+                                        dragTarget = resolveRegionDragTarget(region, camX, camY)
+                                    },
+                                    onDrag = { change, dragAmount ->
+                                        change.consume()
+                                        if (dragTarget == RegionDragTarget.NONE) return@detectDragGestures
+                                        val region = viewModel.measurementRegion.value ?: return@detectDragGestures
+                                        val dCamX = dragAmount.x / DISPLAY_SCALE
+                                        val dCamY = dragAmount.y / DISPLAY_SCALE
+                                        viewModel.setMeasurementRegion(applyRegionDrag(region, dragTarget, dCamX, dCamY))
+                                    },
+                                )
+                            }
+                        },
+                    ),
         ) {
             bitmap?.let { bmp ->
                 Image(
@@ -185,7 +193,46 @@ fun CameraScreen(viewModel: CameraViewModel, modifier: Modifier = Modifier) {
                 Icon(Icons.Filled.Clear, contentDescription = "Clear temperature history")
             }
         }
-        TempHistoryChart(tempHistory, modifier = Modifier.fillMaxWidth().height(120.dp))
+        val isCelsius by viewModel.isCelsius.collectAsState()
+        TemperatureHistoryChart(
+            samples = tempHistory,
+            isCelsius = isCelsius,
+            primaryLabel = if (measurementMode == MeasurementMode.REGION) "Avg" else "Spot",
+        )
+        }
+        HorizontalDivider()
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier.fillMaxWidth().padding(16.dp),
+        ) {
+            Button(
+                onClick = { viewModel.toggleConnection() },
+                enabled = !isConnecting,
+            ) {
+                Text(
+                    when {
+                        isConnecting -> "Connecting..."
+                        isConnected -> "Disconnect"
+                        else -> "Connect"
+                    },
+                )
+            }
+            Button(onClick = { viewModel.getImage() }, enabled = isConnected) {
+                Icon(Icons.Filled.Camera, contentDescription = null)
+                Spacer(Modifier.width(4.dp))
+                Text("Get")
+            }
+            Button(onClick = { viewModel.toggleStreaming() }, enabled = isConnected) {
+                Text(if (isStreaming) "Stop Stream" else "Stream")
+            }
+            Button(onClick = { viewModel.toggleRecording() }, enabled = isConnected) {
+                Text(if (isRecording) "Stop Recording" else "Record")
+            }
+            Button(onClick = { saveCurrentFrame(viewModel) }, enabled = isConnected) {
+                Text("Save Frame")
+            }
+        }
     }
 }
 
@@ -194,30 +241,54 @@ private fun saveCurrentFrame(viewModel: CameraViewModel) {
     runCatching { cameraUtils.saveTjsn(dto) }
 }
 
-@Composable
-private fun TempHistoryChart(samples: List<TempSample>, modifier: Modifier = Modifier) {
-    Box(modifier = modifier.border(1.dp, Color.Gray).padding(4.dp)) {
-        if (samples.size < 2) {
-            Text("Collecting data...", modifier = Modifier.align(Alignment.Center))
-            return@Box
-        }
-        Canvas(modifier = Modifier.fillMaxSize()) {
-            val minV = samples.minOf { it.min }
-            val maxV = samples.maxOf { it.max }
-            val range = (maxV - minV).let { if (it <= 0f) 1f else it }
-            val minT = samples.first().timestampMs
-            val maxT = samples.last().timestampMs
-            val timeRange = (maxT - minT).let { if (it <= 0L) 1L else it }
+/** Which part of the region box a drag gesture is manipulating. */
+private enum class RegionDragTarget { NONE, MOVE, TOP_LEFT, TOP_RIGHT, BOTTOM_LEFT, BOTTOM_RIGHT }
 
-            fun point(sample: TempSample): Offset {
-                val x = (sample.timestampMs - minT).toFloat() / timeRange * size.width
-                val y = size.height - ((sample.spot - minV) / range * size.height)
-                return Offset(x, y)
-            }
+// Camera-pixel radius around each corner treated as a resize handle, rather than a plain move.
+private const val REGION_HANDLE_HIT_PX = 10f
 
-            for (i in 0 until samples.size - 1) {
-                drawLine(Color(0xFFE07A3F), point(samples[i]), point(samples[i + 1]), strokeWidth = 2f)
-            }
-        }
+private fun resolveRegionDragTarget(region: Rect, camX: Float, camY: Float): RegionDragTarget {
+    fun near(x: Int, y: Int) = hypot((camX - x).toDouble(), (camY - y).toDouble()) <= REGION_HANDLE_HIT_PX
+    return when {
+        near(region.left, region.top) -> RegionDragTarget.TOP_LEFT
+        near(region.right, region.top) -> RegionDragTarget.TOP_RIGHT
+        near(region.left, region.bottom) -> RegionDragTarget.BOTTOM_LEFT
+        near(region.right, region.bottom) -> RegionDragTarget.BOTTOM_RIGHT
+        camX >= region.left && camX <= region.right && camY >= region.top && camY <= region.bottom ->
+            RegionDragTarget.MOVE
+        else -> RegionDragTarget.NONE
     }
+}
+
+private fun applyRegionDrag(region: Rect, target: RegionDragTarget, dx: Float, dy: Float): Rect {
+    var left = region.left
+    var top = region.top
+    var right = region.right
+    var bottom = region.bottom
+    when (target) {
+        RegionDragTarget.MOVE -> {
+            left += dx.roundToInt()
+            right += dx.roundToInt()
+            top += dy.roundToInt()
+            bottom += dy.roundToInt()
+        }
+        RegionDragTarget.TOP_LEFT -> {
+            left += dx.roundToInt()
+            top += dy.roundToInt()
+        }
+        RegionDragTarget.TOP_RIGHT -> {
+            right += dx.roundToInt()
+            top += dy.roundToInt()
+        }
+        RegionDragTarget.BOTTOM_LEFT -> {
+            left += dx.roundToInt()
+            bottom += dy.roundToInt()
+        }
+        RegionDragTarget.BOTTOM_RIGHT -> {
+            right += dx.roundToInt()
+            bottom += dy.roundToInt()
+        }
+        RegionDragTarget.NONE -> {}
+    }
+    return Rect(left, top, right, bottom)
 }
