@@ -86,7 +86,10 @@ fun App(viewModel: CameraViewModel) {
                             modifier = Modifier.fillMaxSize(),
                             onNavigateBack = { screen = Screen.CAMERA },
                         )
-                        Screen.LIBRARY -> LibraryScreen(modifier = Modifier.fillMaxSize())
+                        Screen.LIBRARY -> LibraryScreen(
+                            modifier = Modifier.fillMaxSize(),
+                            onShowMessage = ::showMessage,
+                        )
                         Screen.CHARTS -> ChartsScreen(modifier = Modifier.fillMaxSize())
                     }
                 }

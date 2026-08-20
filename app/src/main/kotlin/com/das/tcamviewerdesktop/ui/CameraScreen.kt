@@ -243,8 +243,9 @@ fun CameraScreen(viewModel: CameraViewModel, modifier: Modifier = Modifier, onSh
             Button(
                 onClick = {
                     val dto = currentImageDto ?: return@Button
-                    if (runCatching { cameraUtils.saveTjsn(dto) }.getOrDefault(false)) {
-                        onShowMessage("Image saved as ${dto.filename}")
+                    val saved = runCatching { cameraUtils.saveTjsn(dto) }.getOrNull()
+                    if (saved != null) {
+                        onShowMessage("Image saved as ${saved.path}")
                     } else {
                         onShowMessage("Save failed")
                     }

@@ -69,7 +69,12 @@ private fun formatSpeed(v: Float): String = if (v == v.toInt().toFloat()) v.toIn
  *  Android app's VideoPlayerWindow (skip ±5 frames, play/pause, speed control for time lapses).
  *  No MP4 export/share here — no portable desktop video encoder wired up. */
 @Composable
-fun VideoPlayerWindow(file: File, onDismiss: () -> Unit, onDelete: () -> Unit) {
+fun VideoPlayerWindow(
+    file: File,
+    onDismiss: () -> Unit,
+    onDelete: () -> Unit,
+    onShowMessage: (String) -> Unit = {},
+) {
     var videoFrames by remember { mutableStateOf<List<VideoFrame>>(emptyList()) }
     var frameIntervals by remember { mutableStateOf<List<Long>>(emptyList()) }
     var fallbackIntervalMs by remember { mutableStateOf(125L) }
@@ -77,7 +82,6 @@ fun VideoPlayerWindow(file: File, onDismiss: () -> Unit, onDelete: () -> Unit) {
     var isPlaying by remember { mutableStateOf(false) }
     var currentIndex by remember { mutableIntStateOf(0) }
     var isExporting by remember { mutableStateOf(false) }
-    var exportMessage by remember { mutableStateOf<String?>(null) }
     var showDeleteConfirm by remember { mutableStateOf(false) }
     var speedIndex by remember { mutableIntStateOf(TIME_LAPSE_DEFAULT_SPEED_INDEX) }
     var speedMenuExpanded by remember { mutableStateOf(false) }
@@ -168,7 +172,7 @@ fun VideoPlayerWindow(file: File, onDismiss: () -> Unit, onDelete: () -> Unit) {
                                 val name = "${file.nameWithoutExtension}_frame${currentIndex + 1}"
                                 val saved = withContext(Dispatchers.IO) { saveExportedPng(composite, name) }
                                 isExporting = false
-                                exportMessage = if (saved != null) "Exported to ${saved.path}" else "Export failed"
+                                onShowMessage(if (saved != null) "Exported to ${saved.path}" else "Export failed")
                             }
                         },
                     ) { Icon(Icons.Default.SaveAlt, contentDescription = "Export current frame", tint = Color.White) }
@@ -265,14 +269,6 @@ fun VideoPlayerWindow(file: File, onDismiss: () -> Unit, onDelete: () -> Unit) {
                 text = { Text("This cannot be undone.") },
                 confirmButton = { TextButton(onClick = { showDeleteConfirm = false; onDelete() }) { Text("Delete") } },
                 dismissButton = { TextButton(onClick = { showDeleteConfirm = false }) { Text("Cancel") } },
-            )
-        }
-        exportMessage?.let { msg ->
-            AlertDialog(
-                onDismissRequest = { exportMessage = null },
-                confirmButton = { TextButton(onClick = { exportMessage = null }) { Text("OK") } },
-                title = { Text("Export") },
-                text = { Text(msg) },
             )
         }
     }

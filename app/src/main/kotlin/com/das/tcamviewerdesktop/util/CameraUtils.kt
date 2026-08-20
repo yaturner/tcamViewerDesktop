@@ -216,18 +216,20 @@ class CameraUtils {
         }
     }
 
+    /** Returns the saved file (its full path is what save-confirmation toasts show), or null if
+     *  the destination directory couldn't be created. */
     @Throws(IOException::class)
-    fun saveTjsn(imageDto: ImageDto): Boolean {
+    fun saveTjsn(imageDto: ImageDto): File? {
         val rootDir = File(dataRoot, "Pictures")
         val dir = File(rootDir, generateNewPath())
-        if (!dir.exists() && !dir.mkdirs()) return false
+        if (!dir.exists() && !dir.mkdirs()) return null
 
         val tjsn = File(dir, generateNewFilename() + ".tjsn")
         imageDto.filename = tjsn.name
         FileOutputStream(tjsn).use { stream ->
             stream.write(imageDto.getJsonObject().toString().toByteArray(StandardCharsets.US_ASCII))
         }
-        return true
+        return tjsn
     }
 
     /** Saves the temperature-over-time history as a `.tchart` JSON file, mirroring saveTjsn's

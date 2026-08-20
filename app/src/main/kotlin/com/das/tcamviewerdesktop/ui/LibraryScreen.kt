@@ -84,7 +84,7 @@ import java.util.Date
  *  recordings/time lapses. Ported from tcamViewer2's Android LibraryScreen — no MP4 export/share
  *  (no portable desktop video encoder wired up). */
 @Composable
-fun LibraryScreen(modifier: Modifier = Modifier) {
+fun LibraryScreen(modifier: Modifier = Modifier, onShowMessage: (String) -> Unit = {}) {
     var fileGroups by remember { mutableStateOf<List<Pair<String, List<File>>>>(emptyList()) }
     var isLoading by remember { mutableStateOf(true) }
     var selectedPaths by remember { mutableStateOf(emptySet<String>()) }
@@ -225,6 +225,7 @@ fun LibraryScreen(modifier: Modifier = Modifier) {
                     browseFiles = browseFiles.filter { it.absolutePath != deleted.absolutePath }
                     selectedPaths = selectedPaths - deleted.absolutePath
                 },
+                onShowMessage = onShowMessage,
             )
         }
 
@@ -238,6 +239,7 @@ fun LibraryScreen(modifier: Modifier = Modifier) {
                     selectedPaths = selectedPaths - file.absolutePath
                     playFile = null
                 },
+                onShowMessage = onShowMessage,
             )
         }
 
@@ -418,12 +420,16 @@ private fun ThumbnailGridCell(file: File, isSelected: Boolean, onClick: () -> Un
 }
 
 @Composable
-private fun BrowseOverlay(files: List<File>, onDismiss: () -> Unit, onDelete: (File) -> Unit) {
+private fun BrowseOverlay(
+    files: List<File>,
+    onDismiss: () -> Unit,
+    onDelete: (File) -> Unit,
+    onShowMessage: (String) -> Unit = {},
+) {
     val coroutineScope = rememberCoroutineScope()
     var currentIndex by remember { mutableIntStateOf(0) }
     var showDeleteConfirm by remember { mutableStateOf(false) }
     var isExporting by remember { mutableStateOf(false) }
-    var exportMessage by remember { mutableStateOf<String?>(null) }
 
     LaunchedEffect(files.size) {
         if (files.isEmpty()) onDismiss() else currentIndex = currentIndex.coerceAtMost(files.size - 1)
@@ -463,7 +469,7 @@ private fun BrowseOverlay(files: List<File>, onDismiss: () -> Unit, onDelete: (F
                             val name = file.nameWithoutExtension.removePrefix("img_")
                             val saved = withContext(Dispatchers.IO) { saveExportedPng(composite, name) }
                             isExporting = false
-                            exportMessage = if (saved != null) "Exported to ${saved.path}" else "Export failed"
+                            onShowMessage(if (saved != null) "Exported to ${saved.path}" else "Export failed")
                         }
                     },
                 ) { Icon(Icons.Default.SaveAlt, contentDescription = "Export PNG", tint = Color.White) }
@@ -532,14 +538,6 @@ private fun BrowseOverlay(files: List<File>, onDismiss: () -> Unit, onDelete: (F
                     }) { Text("Delete") }
                 },
                 dismissButton = { TextButton(onClick = { showDeleteConfirm = false }) { Text("Cancel") } },
-            )
-        }
-        exportMessage?.let { msg ->
-            AlertDialog(
-                onDismissRequest = { exportMessage = null },
-                confirmButton = { TextButton(onClick = { exportMessage = null }) { Text("OK") } },
-                title = { Text("Export") },
-                text = { Text(msg) },
             )
         }
     }
