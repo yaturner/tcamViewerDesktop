@@ -12,12 +12,16 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.RadioButton
@@ -34,16 +38,19 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.das.tcamviewerdesktop.constants.Constants
 import com.das.tcamviewerdesktop.model.CameraViewModel
+import com.das.tcamviewerdesktop.net.DiscoveredCamera
+import com.das.tcamviewerdesktop.net.discoverTcamCameras
 import com.das.tcamviewerdesktop.paletteFactory
 import com.das.tcamviewerdesktop.settingsManager
 
 /** Settings tab: staged edits (Save/Cancel) over every persisted preference, plus a "Camera
  *  Settings" section (AGC/emissivity/gain, WiFi) that's only meaningful while connected — mirrors
- *  the Android app's SettingsScreen, minus mDNS discovery and WiFi SSID scanning (no portable
- *  desktop equivalent wired up yet). */
+ *  the Android app's SettingsScreen. mDNS "Find tCam Devices" is ported (via JmDNS); WiFi SSID
+ *  scanning isn't (no portable desktop equivalent wired up yet). */
 @Composable
 fun SettingsScreen(viewModel: CameraViewModel, modifier: Modifier = Modifier) {
     val isConnected by viewModel.isConnected.collectAsState()
@@ -88,6 +95,7 @@ fun SettingsScreen(viewModel: CameraViewModel, modifier: Modifier = Modifier) {
 
     var showIpChangeConfirm by remember { mutableStateOf(false) }
     var showWifiDialog by remember { mutableStateOf(false) }
+    var showDiscoveryDialog by remember { mutableStateOf(false) }
 
     fun performSave() {
         settingsManager.saveCameraIp(localIp)
@@ -167,13 +175,18 @@ fun SettingsScreen(viewModel: CameraViewModel, modifier: Modifier = Modifier) {
 
             SectionHeader("Application Settings")
 
-            TextField(
-                value = localIp,
-                onValueChange = { localIp = it },
-                label = { Text("Camera IP Address") },
-                singleLine = true,
-                modifier = Modifier.fillMaxWidth(),
-            )
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                TextField(
+                    value = localIp,
+                    onValueChange = { localIp = it },
+                    label = { Text("Camera IP Address") },
+                    singleLine = true,
+                    modifier = Modifier.weight(1f),
+                )
+                IconButton(onClick = { showDiscoveryDialog = true }) {
+                    Icon(Icons.Default.Search, contentDescription = "Find tCam devices")
+                }
+            }
 
             SwitchRow("Shutter Sound", localShutter) { localShutter = it }
             SwitchRow("Spotmeter", localSpotmeter) { localSpotmeter = it }
@@ -268,6 +281,16 @@ fun SettingsScreen(viewModel: CameraViewModel, modifier: Modifier = Modifier) {
 
     if (showWifiDialog) {
         WifiConfigDialog(viewModel = viewModel, onDismiss = { showWifiDialog = false })
+    }
+
+    if (showDiscoveryDialog) {
+        DiscoveryDialog(
+            onDismiss = { showDiscoveryDialog = false },
+            onSelect = { ip ->
+                localIp = ip
+                showDiscoveryDialog = false
+            },
+        )
     }
 }
 
@@ -388,4 +411,56 @@ private fun WifiConfigDialog(viewModel: CameraViewModel, onDismiss: () -> Unit) 
             dismissButton = { TextButton(onClick = { showSaveConfirm = false }) { Text("Cancel") } },
         )
     }
+}
+
+/** mDNS "Find tCam Devices" dialog — searches for [Constants.SERVICE_TYPE] on the local network
+ *  via [discoverTcamCameras] (JmDNS) and lets the user pick a discovered camera's IP. */
+@Composable
+private fun DiscoveryDialog(onDismiss: () -> Unit, onSelect: (String) -> Unit) {
+    var devices by remember { mutableStateOf<List<DiscoveredCamera>>(emptyList()) }
+    var isDiscovering by remember { mutableStateOf(true) }
+    var selected by remember { mutableStateOf<DiscoveredCamera?>(null) }
+
+    LaunchedEffect(Unit) {
+        isDiscovering = true
+        devices = discoverTcamCameras(timeoutMs = 8_000L)
+        isDiscovering = false
+    }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Find tCam Devices") },
+        text = {
+            Column(modifier = Modifier.widthIn(max = 400.dp)) {
+                if (isDiscovering) {
+                    CircularProgressIndicator(modifier = Modifier.padding(bottom = 12.dp))
+                }
+                if (devices.isEmpty()) {
+                    Text(if (isDiscovering) "Searching for cameras on your network…" else "No tCam devices found.")
+                } else {
+                    Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
+                        devices.forEach { device ->
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .selectable(selected = selected == device, onClick = { selected = device })
+                                    .padding(vertical = 8.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                RadioButton(selected = selected == device, onClick = { selected = device })
+                                Column {
+                                    Text(device.name, fontWeight = FontWeight.SemiBold)
+                                    Text(device.ip, style = MaterialTheme.typography.bodySmall)
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(enabled = selected != null, onClick = { selected?.let { onSelect(it.ip) } }) { Text("Done") }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
+    )
 }

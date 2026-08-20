@@ -35,15 +35,21 @@ The UI has three tabs behind a `NavigationRail` (`ui/App.kt`):
   image with spotmeter tap / region overlay, temperature readouts, and the temperature-history
   chart.
 - **Settings** (`ui/SettingsScreen.kt`) — staged Save/Cancel editing (mirrors the Android app's
-  pattern) over camera IP, palette, units, manual range, shutter sound, spotmeter/region toggle,
-  temperature alerts, and — while connected — AGC/emissivity/gain mode and a basic WiFi config
-  dialog (no SSID scan).
+  pattern) over camera IP (with an mDNS "Find tCam Devices" search button), palette, units,
+  manual range, shutter sound, spotmeter/region toggle, temperature alerts, and — while
+  connected — AGC/emissivity/gain mode and a basic WiFi config dialog (no SSID scan).
 - **Library** (`ui/LibraryScreen.kt`) — browses saved `.tjsn` frames grouped by date folder,
   multi-select delete, and a full-size browse view with next/prev.
 
+mDNS discovery (`net/CameraDiscovery.kt`) uses [JmDNS](https://github.com/jmdns/jmdns) — the
+desktop JVM has no built-in mDNS/DNS-SD client the way Android's NsdManager provides one. On a
+multi-homed machine (wired + WiFi both up), a plain `JmDNS.create()` picks one interface and can
+silently miss cameras reachable only on the other, so discovery binds a separate JmDNS instance
+to every active non-loopback IPv4 interface and merges the results. It's also wired into
+`CameraViewModel`'s auto-reconnect: after retrying the last-known IP a few times, it falls back
+to a fresh mDNS scan in case the camera's DHCP lease changed.
+
 **Not yet ported** from the Android app:
-- mDNS auto-discovery fallback when a camera's DHCP lease changes while disconnected (needs a
-  JVM mDNS library such as JmDNS), and the "Find tCam Devices" discovery dialog in Settings
 - Recording (`.mtjsn`) / time-lapse (`.tltjsn`) browsing and playback in Library (only `.tjsn`
   single frames are listed)
 - Charts screen (browsing saved `.tchart` temperature-history files)

@@ -3,6 +3,7 @@ package com.das.tcamviewerdesktop.model
 import com.das.tcamviewerdesktop.cameraService
 import com.das.tcamviewerdesktop.cameraUtils
 import com.das.tcamviewerdesktop.constants.Constants
+import com.das.tcamviewerdesktop.net.discoverTcamCameras
 import com.das.tcamviewerdesktop.paletteFactory
 import com.das.tcamviewerdesktop.settingsManager
 import io.reactivex.rxjava3.disposables.Disposable
@@ -40,9 +41,8 @@ import kotlin.coroutines.coroutineContext
  *  - Bitmap -> BufferedImage, android.graphics.Rect -> [Rect].
  *  - Shutter "sound" is a system beep (Toolkit.beep()) instead of a bundled WAV played through
  *    MediaPlayer — no audio asset to bundle for a first desktop port.
- *  - mDNS auto-discovery fallback (Android NsdManager-based) is NOT YET PORTED — auto-reconnect
- *    only retries the last-known IP, it doesn't fall back to rediscovering the camera if its
- *    DHCP lease changed while disconnected.
+ *  - mDNS auto-discovery ([com.das.tcamviewerdesktop.net.discoverTcamCameras]) uses JmDNS
+ *    instead of Android's NsdManager.
  */
 class CameraViewModel {
     private val log = Logger.getLogger(CameraViewModel::class.java.name)
@@ -421,12 +421,10 @@ class CameraViewModel {
         startAutoReconnect()
     }
 
-    /** Retries the last-known address a few times — most drops are transient (WiFi hiccup,
-     *  camera modem-sleep) and clear up without the address changing.
-     *
-     *  NOTE: unlike the Android app, this does NOT yet fall back to mDNS rediscovery if the
-     *  camera's DHCP lease changed while disconnected — that needs a JVM mDNS library (e.g.
-     *  JmDNS), not yet wired up in this port. */
+    /** Retries the last-known address a few times first — most drops are transient (WiFi hiccup,
+     *  camera modem-sleep) and clear up without the address changing. If those all fail, falls
+     *  back to mDNS discovery in case the camera's DHCP lease handed out a new address, and
+     *  retries once more against whatever it finds. */
     private fun startAutoReconnect() {
         connectJob?.cancel()
         connectJob = vmScope.launch(Dispatchers.IO) {
@@ -436,6 +434,13 @@ class CameraViewModel {
                 if (!isActive) return@launch
                 connectToCamera(lastIp, showErrorOnFailure = false)
                 if (_isConnected.value) return@launch
+            }
+            if (!isActive) return@launch
+            val camera = discoverTcamCameras(timeoutMs = 8_000L).firstOrNull()
+            if (!isActive) return@launch
+            if (camera != null) {
+                if (camera.ip != lastIp) settingsManager.saveCameraIp(camera.ip)
+                connectToCamera(camera.ip, showErrorOnFailure = false)
             }
             if (!_isConnected.value && isActive) _showConnectError.value = true
         }

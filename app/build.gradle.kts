@@ -19,6 +19,7 @@ dependencies {
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-swing:1.9.0")
     implementation("org.json:json:20231013")
     implementation("io.reactivex.rxjava3:rxjava:3.1.12")
+    implementation("org.jmdns:jmdns:3.5.9")
 
     testImplementation(kotlin("test"))
 }
