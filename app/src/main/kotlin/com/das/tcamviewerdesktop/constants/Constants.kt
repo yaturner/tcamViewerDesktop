@@ -90,6 +90,7 @@ object Constants {
     const val CMD_SET_STREAM_OFF: String = "\u0002{\"cmd\":\"stream_off\"}\u0003"
     const val CMD_SET_WIFI: String = "\u0002{\"cmd\":\"set_wifi\", \"args\": %s}\u0003"
     const val CMD_GET_IMAGE: String = "\u0002{\"cmd\":\"get_image\"}\u0003"
+    const val CMD_RUN_FFC: String = "\u0002{\"cmd\":\"run_ffc\"}\u0003"
 
     // Camera Command args
     val ARGS_SET_TIME: String = "{" +

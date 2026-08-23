@@ -22,6 +22,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Camera
+import androidx.compose.material.icons.filled.CenterFocusStrong
 import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -239,6 +240,9 @@ fun CameraScreen(viewModel: CameraViewModel, modifier: Modifier = Modifier, onSh
                 Icon(Icons.Filled.Camera, contentDescription = null)
                 Spacer(Modifier.width(4.dp))
                 Text("Get")
+            }
+            IconButton(onClick = { viewModel.runFfc() }, enabled = isConnected) {
+                Icon(Icons.Filled.CenterFocusStrong, contentDescription = "Flat field correction")
             }
             Button(
                 onClick = {

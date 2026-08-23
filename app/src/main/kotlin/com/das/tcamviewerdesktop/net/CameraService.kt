@@ -221,6 +221,12 @@ class CameraService {
         }
     }
 
+    fun runFfc() {
+        serviceScope.launch {
+            writeCommand(Constants.CMD_RUN_FFC.toByteArray(StandardCharsets.UTF_8))
+        }
+    }
+
     suspend fun getImageOnce(timeoutMs: Long = 15_000L): JSONObject? {
         if (!isConnected) return null
         val deferred = CompletableDeferred<JSONObject>()

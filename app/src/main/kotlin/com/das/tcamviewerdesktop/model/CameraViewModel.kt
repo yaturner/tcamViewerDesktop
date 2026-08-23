@@ -582,6 +582,11 @@ class CameraViewModel {
         cameraService.getImage()
     }
 
+    fun runFfc() {
+        if (!_isConnected.value) return
+        cameraService.runFfc()
+    }
+
     fun startTimeLapse(intervalSec: Int, durationSec: Int) {
         if (!_isConnected.value || _isTimeLapsing.value) return
         val intervalMs = intervalSec * 1000L
