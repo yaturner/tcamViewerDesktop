@@ -31,9 +31,10 @@ temperature-over-time history, temperature alerts, single-frame save, recording 
 time-lapse capture (`.tltjsn`).
 
 The UI has four tabs behind a `NavigationRail` (`ui/App.kt`):
-- **Camera** (`ui/CameraScreen.kt`) — connect/Get/Stream/Record/Save Frame, the live thermal
-  image with spotmeter tap-to-move / region drag-to-move-or-resize overlay, temperature
-  readouts, and the temperature-history chart.
+- **Camera** (`ui/CameraScreen.kt`) — connect/Get/Stream/Record/Save, a flat field correction
+  (FFC) button that sends a `run_ffc` command to manually trigger the Lepton's calibration, the
+  live thermal image with spotmeter tap-to-move / region drag-to-move-or-resize overlay,
+  temperature readouts, and the temperature-history chart.
 - **Settings** (`ui/SettingsScreen.kt`) — staged Save/Cancel editing (mirrors the Android app's
   pattern) over camera IP (with an mDNS "Find tCam Devices" search button), palette, units,
   manual range, shutter sound, spotmeter/region toggle, temperature alerts, and — while
