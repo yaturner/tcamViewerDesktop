@@ -91,6 +91,12 @@ object Constants {
     const val CMD_SET_WIFI: String = "\u0002{\"cmd\":\"set_wifi\", \"args\": %s}\u0003"
     const val CMD_GET_IMAGE: String = "\u0002{\"cmd\":\"get_image\"}\u0003"
     const val CMD_RUN_FFC: String = "\u0002{\"cmd\":\"run_ffc\"}\u0003"
+    const val CMD_GET_FS_LIST: String = "\u0002{\"cmd\":\"get_filesystem_list\", \"args\": %s}\u0003"
+    const val CMD_GET_FS_FILE: String = "\u0002{\"cmd\":\"get_file\", \"args\": %s}\u0003"
+
+    // Filesystem command args (full tCam with micro-SD only; tCam-Mini answers "Unsupported")
+    const val ARGS_FS_DIR: String = "{\"dir_name\": \"%s\"}"
+    const val ARGS_FS_FILE: String = "{\"dir_name\": \"%s\", \"file_name\": \"%s\"}"
 
     // Camera Command args
     val ARGS_SET_TIME: String = "{" +

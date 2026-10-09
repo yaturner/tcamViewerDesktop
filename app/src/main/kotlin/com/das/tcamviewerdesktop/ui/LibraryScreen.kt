@@ -66,6 +66,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.das.tcamviewerdesktop.cameraService
 import com.das.tcamviewerdesktop.constants.Constants
 import com.das.tcamviewerdesktop.model.ImageDto
 import com.das.tcamviewerdesktop.settingsManager
@@ -97,8 +98,11 @@ fun LibraryScreen(modifier: Modifier = Modifier, onShowMessage: (String) -> Unit
     var filterFromMillis by remember { mutableStateOf<Long?>(null) }
     var filterToMillis by remember { mutableStateOf<Long?>(null) }
     val dateFilterActive = filterFromMillis != null || filterToMillis != null
+    var showCameraDownload by remember { mutableStateOf(false) }
+    var reloadKey by remember { mutableStateOf(0) }
+    val cameraSupportsFs by cameraService.supportsFilesystem.collectAsState()
 
-    LaunchedEffect(Unit) {
+    LaunchedEffect(reloadKey) {
         isLoading = true
         fileGroups = withContext(Dispatchers.IO) {
             val picturesDir = File(CameraUtils.dataRoot, "Pictures")
@@ -176,10 +180,16 @@ fun LibraryScreen(modifier: Modifier = Modifier, onShowMessage: (String) -> Unit
                     )
                 }
                 Box {
-                    IconButton(onClick = { menuExpanded = true }, enabled = fileGroups.isNotEmpty()) {
+                    IconButton(onClick = { menuExpanded = true }, enabled = fileGroups.isNotEmpty() || cameraSupportsFs) {
                         Icon(Icons.Default.MoreVert, contentDescription = "More options")
                     }
                     DropdownMenu(expanded = menuExpanded, onDismissRequest = { menuExpanded = false }) {
+                        DropdownMenuItem(
+                            text = { Text("Download from camera") },
+                            enabled = cameraSupportsFs,
+                            onClick = { showCameraDownload = true; menuExpanded = false },
+                        )
+                        if (fileGroups.isNotEmpty()) HorizontalDivider()
                         DropdownMenuItem(text = { Text("Sort ascending") }, onClick = { sortAscending = true; menuExpanded = false })
                         DropdownMenuItem(text = { Text("Sort descending") }, onClick = { sortAscending = false; menuExpanded = false })
                     }
@@ -242,6 +252,14 @@ fun LibraryScreen(modifier: Modifier = Modifier, onShowMessage: (String) -> Unit
                     selectedPaths = selectedPaths - file.absolutePath
                     playFile = null
                 },
+                onShowMessage = onShowMessage,
+            )
+        }
+
+        if (showCameraDownload) {
+            CameraDownloadWindow(
+                onDismiss = { showCameraDownload = false },
+                onSaved = { reloadKey++ },
                 onShowMessage = onShowMessage,
             )
         }

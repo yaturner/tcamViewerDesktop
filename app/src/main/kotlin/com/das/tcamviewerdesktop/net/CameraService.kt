@@ -1,8 +1,10 @@
 package com.das.tcamviewerdesktop.net
 
 import com.das.tcamviewerdesktop.constants.Constants
+import com.das.tcamviewerdesktop.util.DeviceFiles
 import io.reactivex.rxjava3.core.Observable
 import io.reactivex.rxjava3.subjects.PublishSubject
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -12,6 +14,9 @@ import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
@@ -53,6 +58,11 @@ class CameraService {
         private const val IDLE_HEALTH_CHECK_INTERVAL_MS = 60_000L
         private const val IDLE_HEALTH_CHECK_TIMEOUT_MS = 5_000L
 
+        // Filesystem support is a per-camera capability (full tCam with micro-SD only), so probe
+        // it once per connection with a short timeout — a camera without it never answers, so the
+        // short timeout is itself the "no" answer.
+        private const val FS_PROBE_TIMEOUT_MS = 3_000L
+
         private val log = Logger.getLogger(CameraService::class.java.name)
     }
 
@@ -73,6 +83,14 @@ class CameraService {
 
     // Resolved with the next radiometric frame; used by getImageOnce() for time lapse capture
     @Volatile private var singleImageDeferred: CompletableDeferred<JSONObject>? = null
+
+    // Set while a get_file request is waiting for its reply (see fetchFile)
+    @Volatile private var fileDeferred: CompletableDeferred<JSONObject>? = null
+
+    // True when the connected camera answers filesystem requests (full tCam with micro-SD).
+    // Probed once per connection; reset on teardown.
+    private val _supportsFilesystem = MutableStateFlow(false)
+    val supportsFilesystem: StateFlow<Boolean> = _supportsFilesystem.asStateFlow()
 
     @Volatile private var running = false
     private var bytesRead = 0
@@ -139,6 +157,9 @@ class CameraService {
             // so saved images/recordings get sane timestamps. tCam itself has a battery-backed
             // RTC and just re-accepts the same time, so this is harmless there too.
             setTime()
+            serviceScope.launch {
+                _supportsFilesystem.value = listDirectory("/", timeoutMillis = FS_PROBE_TIMEOUT_MS) != null
+            }
         }
         connected
     }
@@ -183,6 +204,7 @@ class CameraService {
 
     private fun teardownConnection() {
         connectedFlag = false
+        _supportsFilesystem.value = false
         try { cameraSocket?.shutdownInput() } catch (_: Exception) {}
         try { cameraSocket?.shutdownOutput() } catch (_: Exception) {}
         try { inFromSocket?.close() } catch (_: Exception) {}
@@ -278,6 +300,70 @@ class CameraService {
     fun runFfc() {
         serviceScope.launch {
             writeCommand(Constants.CMD_RUN_FFC.toByteArray(StandardCharsets.UTF_8))
+        }
+    }
+
+    /**
+     * Lists the names of files/folders in [dirName] on a full tCam's micro-SD card (also used as
+     * the connect-time filesystem-support probe with `dirName = "/"`). Returns null on failure or
+     * timeout (a camera without filesystem support — e.g. tCam-Mini — never answers at all).
+     */
+    suspend fun listDirectory(dirName: String, timeoutMillis: Long = 5000L): List<String>? {
+        val args = String.format(Constants.ARGS_FS_DIR, dirName)
+        val command = String.format(Constants.CMD_GET_FS_LIST, args)
+        val response = sendCmd(command, expectedKey = "filesystem_list", timeoutMillis = timeoutMillis)
+        val listing = response.optJSONObject("filesystem_list") ?: return null
+        return DeviceFiles.parseNameList(listing.optString("name_list"))
+    }
+
+    /**
+     * Pauses streaming before a batch of [fetchFile] calls, so live frames don't arrive mid-
+     * transfer and get mistaken for a file reply. Returns true if streaming was on (and is now
+     * paused) — call [resumeStreamingAfterBatch] when the batch finishes, in that case.
+     *
+     * Deliberately a single pause/resume around the whole batch rather than one per file: every
+     * stream_on/stream_off round trip risks a lost ack (the full tCam's modem-sleep behavior),
+     * and doing that up to once per file both slows a multi-file download down substantially and
+     * raises the odds of the idle-while-streaming watchdog wrongly treating the camera as
+     * disconnected if an ack got lost right as a resume call set isStreaming back to true.
+     */
+    suspend fun pauseStreamingForBatch(): Boolean {
+        if (!isStreaming) return false
+        isStreaming = false
+        sendCmd(Constants.CMD_SET_STREAM_OFF, expectedKey = "stream_status")
+        return true
+    }
+
+    /** Resumes streaming after a batch where [pauseStreamingForBatch] returned true. */
+    fun resumeStreamingAfterBatch() {
+        if (isConnected) startStreaming()
+    }
+
+    /**
+     * Fetches one image file from the camera's micro-SD card. Returns the file's JSON (the same
+     * shape as a captured `.tjsn`), or null on failure or timeout.
+     *
+     * Live frames use the same keys as the reply, so the caller is expected to have paused
+     * streaming first (see [pauseStreamingForBatch]) when fetching more than one file — this
+     * function does not manage streaming itself.
+     */
+    suspend fun fetchFile(dirName: String, fileName: String, timeoutMs: Long = 20_000L): JSONObject? {
+        if (!isConnected) return null
+        val deferred = CompletableDeferred<JSONObject>()
+        fileDeferred = deferred
+        try {
+            val args = String.format(Constants.ARGS_FS_FILE, dirName, fileName)
+            val command = String.format(Constants.CMD_GET_FS_FILE, args)
+            val sent = withContext(Dispatchers.IO) { writeCommand(command.toByteArray(StandardCharsets.UTF_8)) }
+            if (!sent) {
+                log.fine("fetchFile $dirName/$fileName: write failed")
+                return null
+            }
+            return withTimeoutOrNull(timeoutMs) { deferred.await() }
+        } catch (e: CancellationException) {
+            throw e
+        } finally {
+            fileDeferred = null
         }
     }
 
@@ -434,7 +520,12 @@ class CameraService {
                                     parseResponse(
                                         String(response, 0, responsePos, StandardCharsets.UTF_8),
                                     )
-                                if (!routeToPendingRequest(parsedJson)) {
+                                val pendingFile = fileDeferred
+                                if (pendingFile != null && !pendingFile.isCompleted && parsedJson.has("radiometric")) {
+                                    // fetchFile pauses streaming first, so this is the get_file reply
+                                    fileDeferred = null
+                                    pendingFile.complete(parsedJson)
+                                } else if (!routeToPendingRequest(parsedJson)) {
                                     val deferred = singleImageDeferred
                                     if (deferred != null && !deferred.isCompleted && parsedJson.has("radiometric")) {
                                         singleImageDeferred = null
