@@ -24,6 +24,7 @@ import java.io.InputStream
 import java.io.OutputStream
 import java.net.Socket
 import java.nio.charset.StandardCharsets
+import java.util.Calendar
 import java.util.concurrent.ConcurrentHashMap
 import java.util.logging.Level
 import java.util.logging.Logger
@@ -110,7 +111,14 @@ class CameraService {
             }
 
         connectedFlag = connected
-        if (connected) startListening()
+        if (connected) {
+            startListening()
+            // tCam-Mini has no battery-backed RTC, so it powers up with whatever time it last
+            // had (or none at all) — push this machine's clock to it on every fresh connection
+            // so saved images/recordings get sane timestamps. tCam itself has a battery-backed
+            // RTC and just re-accepts the same time, so this is harmless there too.
+            setTime()
+        }
         connected
     }
 
@@ -279,6 +287,29 @@ class CameraService {
     fun setWifi(argsJson: String) {
         serviceScope.launch {
             val cmd = String.format(Constants.CMD_SET_WIFI, argsJson)
+            writeCommand(cmd.toByteArray(StandardCharsets.UTF_8))
+        }
+    }
+
+    /** Push this machine's current time to the camera. tCam's set_time command replies through
+     *  the generic cam_info ack/nack channel rather than a keyed JSON response, so — like
+     *  setConfig/setWifi — this just fires the command and doesn't wait for a match in
+     *  pendingRequests. */
+    fun setTime() {
+        serviceScope.launch {
+            val now = Calendar.getInstance()
+            val args =
+                String.format(
+                    Constants.ARGS_SET_TIME,
+                    now.get(Calendar.SECOND),
+                    now.get(Calendar.MINUTE),
+                    now.get(Calendar.HOUR_OF_DAY),
+                    now.get(Calendar.DAY_OF_WEEK), // matches camera's 1=Sunday..7=Saturday
+                    now.get(Calendar.DAY_OF_MONTH),
+                    now.get(Calendar.MONTH) + 1, // Calendar.MONTH is 0-based; camera wants 1-12
+                    now.get(Calendar.YEAR) - 1970, // camera wants year as an offset from 1970
+                )
+            val cmd = String.format(Constants.CMD_SET_TIME, args)
             writeCommand(cmd.toByteArray(StandardCharsets.UTF_8))
         }
     }
