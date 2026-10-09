@@ -19,6 +19,7 @@
   <url type="bugtracker">https://github.com/yaturner/tcamViewerDesktop/issues</url>
   <content_rating type="oars-1.1" />
   <releases>
+    <release version="2.0.0" date="2026-10-09" />
     <release version="1.1.0" date="2026-10-09" />
   </releases>
 </component>

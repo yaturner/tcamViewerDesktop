@@ -32,8 +32,8 @@ modules:
       # Downloads the exact binary already published as a GitHub Release asset
       # (see Prebuilt releases) rather than committing it to this repo.
       - type: archive
-        url: https://github.com/yaturner/tcamViewerDesktop/releases/download/v1.1.0/tcamViewerDesktop-1.1.0-linux-x64.tar.gz
-        sha256: 065aa502413c2df410778779cf6b171ae058a2b85b990dbbb47a5935589b6473
+        url: https://github.com/yaturner/tcamViewerDesktop/releases/download/v2.0/tcamViewerDesktop-2.0.0-linux-x64.tar.gz
+        sha256: 70e7d041036ad898f9f344c7e510345b79fede1e2879fe0057f4f8a57e4d90dd
       - type: file
         path: io.github.yaturner.tcamViewerDesktop.desktop
       - type: file
