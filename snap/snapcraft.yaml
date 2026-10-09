@@ -1,0 +1,35 @@
+name: tcamviewerdesktop
+version: '1.1.0'
+summary: Desktop viewer for the tCam thermal imaging camera
+description: |
+  Connects to a tCam thermal imaging camera over WiFi, decodes its radiometric
+  and telemetry data, and displays live thermal video with spotmeter or region
+  temperature measurement, ten color palettes, recording, time-lapse capture,
+  and rolling temperature-history charts — a Linux desktop port of the
+  tCam Viewer Android app.
+base: core24
+confinement: strict
+grade: stable
+icon: snap/gui/icon.png
+
+apps:
+  tcamviewerdesktop:
+    command: bin/tcamViewerDesktop
+    plugs:
+      - desktop
+      - desktop-legacy
+      - wayland
+      - x11
+      - opengl
+      - audio-playback
+      - network
+      - network-bind
+      - home
+
+parts:
+  tcamviewerdesktop:
+    plugin: dump
+    # Downloads the exact binary already published as a GitHub Release asset
+    # (see Prebuilt releases) rather than committing it to this repo.
+    source: https://github.com/yaturner/tcamViewerDesktop/releases/download/v1.1.0/tcamViewerDesktop-1.1.0-linux-x64.tar.gz
+    source-type: tar
