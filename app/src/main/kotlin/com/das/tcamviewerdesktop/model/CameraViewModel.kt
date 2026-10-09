@@ -284,6 +284,12 @@ class CameraViewModel {
         }
     }
 
+    private fun defaultSpotmeterRect(): Rect {
+        val cx = Constants.IMAGE_WIDTH / 2
+        val cy = Constants.IMAGE_HEIGHT / 2
+        return Rect(cx - 2, cy - 2, cx + 2, cy + 2)
+    }
+
     private fun seedDefaultRegionIfNeeded() {
         if (_measurementMode.value != MeasurementMode.REGION || _measurementRegion.value != null) return
         val w = Constants.IMAGE_WIDTH / 4
@@ -312,9 +318,39 @@ class CameraViewModel {
 
     private fun refreshTempDisplays() {
         val dto = _currentImageDto.value ?: return
-        if (dto.tLinearEnabled == 0) return
         val celsius = cameraUtils.settingIsCelsius
         val scale = if (dto.tLinearResolution == 0) 10f else 100f
+
+        if (dto.tLinearEnabled == 0) {
+            // AGC active: imageData holds 8-bit AGC display values, not radiometric pixel data,
+            // so dto.maxTemperature/minTemperature (raw min/max of that same array, computed
+            // unconditionally in CameraUtils) are meaningless here and must not be displayed.
+            // dto.spotmeterMean, however, is documented by the tCam firmware as valid
+            // independent of AGC, and already tracks wherever setSpotmeter() last positioned
+            // the camera's own measurement box — reuse it as the sole AGC temperature source.
+            // Region mode has no AGC equivalent at all: the firmware only ever telemeters a
+            // mean, never min/max, over an arbitrary box.
+            val (spotValue, spotText) = formatTemp(dto.spotmeterMean, scale, celsius)
+            _spotmeterTemp.value = spotText
+            _spotmeterTempValue.value = spotValue
+            _maxTemp.value = "--"
+            _minTemp.value = "--"
+            _maxTempValue.value = null
+            _minTempValue.value = null
+            _regionAvgTemp.value = "--"
+            _regionMinTemp.value = "--"
+            _regionMaxTemp.value = "--"
+            if (alertMetric == "Spot") {
+                checkTemperatureAlert(spotValue, spotValue, spotValue, celsius)
+            } else {
+                alertCurrentlyTriggered = false
+            }
+            if (_measurementMode.value == MeasurementMode.POINT) {
+                recordTempSample(spotValue, spotValue, spotValue)
+            }
+            return
+        }
+
         val rect = _spotmeterRect.value
         val (spotValue, spotText) =
             if (rect != null && dto.imageData != null) {
@@ -326,9 +362,17 @@ class CameraViewModel {
             }
         val (maxValue, maxText) = formatTemp(dto.maxTemperature, scale, celsius)
         val (minValue, minText) = formatTemp(dto.minTemperature, scale, celsius)
+        // The colour bar's printed scale endpoints should track whatever range is actually
+        // driving the colour mapping (see CameraUtils.getRadiometricTemperatures) — under
+        // Manual Range that's the user's own bounds, not the scene's real min/max. maxValue/
+        // minValue themselves stay the real scene values: alerts and the temperature history
+        // chart below need actual measurements, not the color-scale display bounds.
+        val isManualRange = cameraUtils.settingIsManualRange
+        val displayMaxText = if (isManualRange) formatManualBound(cameraUtils.settingManualMax, celsius) else maxText
+        val displayMinText = if (isManualRange) formatManualBound(cameraUtils.settingManualMin, celsius) else minText
         _spotmeterTemp.value = spotText
-        _maxTemp.value = maxText
-        _minTemp.value = minText
+        _maxTemp.value = displayMaxText
+        _minTemp.value = displayMinText
         _spotmeterTempValue.value = spotValue
         _maxTempValue.value = maxValue
         _minTempValue.value = minValue
@@ -472,10 +516,12 @@ class CameraViewModel {
             _isConnected.value = false
             _isConnecting.value = false
             _isStreaming.value = false
-            _spotmeterRect.value = null
+            _spotmeterRect.value = defaultSpotmeterRect()
             _cameraConfig.value = null
             userMovedSpotmeter = false
             clearTempHistory()
+            // Region ON/OFF is a persisted Settings preference and stays as-is; only the box's
+            // own position is session-only.
             _measurementRegion.value = null
             alertCurrentlyTriggered = false
         } else {
@@ -495,7 +541,7 @@ class CameraViewModel {
         cameraService.disconnect()
         _isConnected.value = false
         _isStreaming.value = false
-        _spotmeterRect.value = null
+        _spotmeterRect.value = defaultSpotmeterRect()
         _cameraConfig.value = null
         userMovedSpotmeter = false
         connectJob = vmScope.launch(Dispatchers.IO) {
@@ -531,7 +577,17 @@ class CameraViewModel {
     }
 
     fun sendCameraConfig(agcEnabled: Boolean, emissivity: Int, gainMode: Int) {
+        _cameraConfig.value = CameraConfig(agcEnabled, emissivity, gainMode)
         cameraService.setConfig(agcEnabled, emissivity, gainMode)
+    }
+
+    /** The camera applies a set_config asynchronously, so a Get sent immediately could still
+     *  return a frame from the old mode; wait briefly before requesting the new one. */
+    fun refreshAfterConfigChange() {
+        vmScope.launch {
+            delay(500L)
+            getImage()
+        }
     }
 
     fun sendWifiConfig(
@@ -825,6 +881,12 @@ class CameraViewModel {
         val text = if (isCelsius) "%.1f°C".format(value) else "%.1f°F".format(value)
         return value to text
     }
+
+    // settingManualMin/Max are already degrees in the current unit (kept converted in step with
+    // unit changes — see SettingsScreen's convertManualBound), unlike formatTemp's raw-sensor-
+    // value input, so this just needs the matching display format, not a conversion.
+    private fun formatManualBound(value: Float, isCelsius: Boolean): String =
+        if (isCelsius) "%.1f°C".format(value) else "%.1f°F".format(value)
 
     private fun calcSpotTemp(imageData: IntArray, cx: Int, cy: Int, scale: Float, isCelsius: Boolean): Pair<Float, String> {
         val c1 = cx.coerceIn(0, Constants.IMAGE_WIDTH - 1)

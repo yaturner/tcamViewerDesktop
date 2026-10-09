@@ -99,10 +99,11 @@ fun SettingsScreen(viewModel: CameraViewModel, modifier: Modifier = Modifier, on
     var showDiscoveryDialog by remember { mutableStateOf(false) }
 
     fun performSave() {
+        val cameraAgcOnDevice = cameraConfig?.agcEnabled ?: savedCameraAgc
         settingsManager.saveCameraIp(localIp)
         settingsManager.saveManualRange(localManualRange)
-        settingsManager.saveMinValue(localMin)
-        settingsManager.saveMaxValue(localMax)
+        settingsManager.saveMinValue(clampManualRangeBound(localMin, localUnit == "Celsius", isMin = true))
+        settingsManager.saveMaxValue(clampManualRangeBound(localMax, localUnit == "Celsius", isMin = false))
         settingsManager.saveSelectedPalette(localPalette)
         settingsManager.saveShutterSound(localShutter)
         settingsManager.saveSpotmeter(localSpotmeter)
@@ -118,6 +119,7 @@ fun SettingsScreen(viewModel: CameraViewModel, modifier: Modifier = Modifier, on
         if (isConnected) {
             val emissivityPct = (localEmissivity.toIntOrNull() ?: 90).coerceIn(1, 100)
             viewModel.sendCameraConfig(localAgc, emissivityPct, localGainMode)
+            if (localAgc != cameraAgcOnDevice) viewModel.refreshAfterConfigChange()
         }
         onNavigateBack()
     }
@@ -545,4 +547,15 @@ private fun DiscoveryDialog(onDismiss: () -> Unit, onSelect: (String) -> Unit) {
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
     )
+}
+
+internal fun clampManualRangeBound(value: String, isCelsiusUnit: Boolean, isMin: Boolean): String {
+    val floatValue = value.toFloatOrNull() ?: return value
+    return if (isMin) {
+        val floor = if (isCelsiusUnit) -273f else (-273f * 9f / 5f + 32f)
+        if (floatValue < floor) floor.toString() else value
+    } else {
+        val ceiling = if (isCelsiusUnit) 999f else (999f * 9f / 5f + 32f)
+        if (floatValue > ceiling) ceiling.toString() else value
+    }
 }
