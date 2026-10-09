@@ -230,6 +230,19 @@ class CameraViewModel {
         vmScope.launch(Dispatchers.Default) {
             for (json in frameChannel) processFrame(json)
         }
+        attemptAutoConnect()
+    }
+
+    /** Connects to the most-recently-used saved camera on launch, if the user has opted in and
+     *  there is one. Silent on failure — this runs unprompted at launch, so it must not pop an
+     *  error dialog the user didn't ask for; a failed attempt just leaves the app in its normal
+     *  disconnected state, same as if Connect was never clicked. */
+    private fun attemptAutoConnect() {
+        connectJob = vmScope.launch(Dispatchers.IO) {
+            if (!settingsManager.getAutoConnect()) return@launch
+            val lastUsed = settingsManager.getSavedCameras().firstOrNull() ?: return@launch
+            connectToCamera(lastUsed.ip, showErrorOnFailure = false)
+        }
     }
 
     private fun observeSettings() {
@@ -466,6 +479,10 @@ class CameraViewModel {
                 cameraService.getImage()
                 loadCameraConfig()
                 seedDefaultRegionIfNeeded()
+                // Fallback name only — upsertSavedCamera keeps a friendlier name already learned
+                // from an mDNS discovery (see SettingsScreen's Find Devices flow) instead of
+                // overwriting it with the bare IP here.
+                settingsManager.upsertSavedCamera(name = ip, ip = ip)
             } else if (showErrorOnFailure) {
                 _showConnectError.value = true
             }

@@ -13,6 +13,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -57,6 +58,8 @@ fun SettingsScreen(viewModel: CameraViewModel, modifier: Modifier = Modifier, on
     val isConnected by viewModel.isConnected.collectAsState()
     val cameraConfig by viewModel.cameraConfig.collectAsState()
 
+    val savedCameras by settingsManager.savedCamerasFlow.collectAsState()
+    val savedAutoConnect by settingsManager.autoConnectFlow.collectAsState()
     val savedIp by settingsManager.cameraIpFlow.collectAsState()
     val savedManualRange by settingsManager.manualRangeFlow.collectAsState()
     val savedMin by settingsManager.minValueFlow.collectAsState()
@@ -77,6 +80,7 @@ fun SettingsScreen(viewModel: CameraViewModel, modifier: Modifier = Modifier, on
     // Incrementing this forces every local field to reinitialize from the saved values (Cancel).
     var resetKey by remember { mutableStateOf(0) }
 
+    var localAutoConnect by remember(savedAutoConnect, resetKey) { mutableStateOf(savedAutoConnect) }
     var localIp by remember(savedIp, resetKey) { mutableStateOf(savedIp) }
     var localManualRange by remember(savedManualRange, resetKey) { mutableStateOf(savedManualRange) }
     var localMin by remember(savedMin, resetKey) { mutableStateOf(savedMin) }
@@ -100,6 +104,7 @@ fun SettingsScreen(viewModel: CameraViewModel, modifier: Modifier = Modifier, on
 
     fun performSave() {
         val cameraAgcOnDevice = cameraConfig?.agcEnabled ?: savedCameraAgc
+        settingsManager.saveAutoConnect(localAutoConnect)
         settingsManager.saveCameraIp(localIp)
         settingsManager.saveManualRange(localManualRange)
         settingsManager.saveMinValue(clampManualRangeBound(localMin, localUnit == "Celsius", isMin = true))
@@ -171,6 +176,35 @@ fun SettingsScreen(viewModel: CameraViewModel, modifier: Modifier = Modifier, on
             }
 
             SectionHeader("Application Settings")
+
+            // Saved Cameras — cameras found by a past Find Devices scan or connected to before.
+            // Hidden entirely until there's at least one.
+            if (savedCameras.isNotEmpty()) {
+                Text("Saved Cameras", style = MaterialTheme.typography.labelLarge)
+                Column {
+                    savedCameras.forEach { camera ->
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable { localIp = camera.ip }
+                                .padding(vertical = 4.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(camera.name, fontWeight = FontWeight.SemiBold)
+                                Text(camera.ip, style = MaterialTheme.typography.bodySmall)
+                            }
+                            IconButton(onClick = { settingsManager.removeSavedCamera(camera.ip) }) {
+                                Icon(Icons.Default.Delete, contentDescription = "Remove ${camera.name}")
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Auto-connect on launch — connects to the most-recently-used Saved Camera above
+            // with no Connect click needed. Off by default; a no-op if the list above is empty.
+            SwitchRow("Auto-connect on launch", localAutoConnect) { localAutoConnect = it }
 
             Row(verticalAlignment = Alignment.CenterVertically) {
                 TextField(
@@ -508,6 +542,10 @@ private fun DiscoveryDialog(onDismiss: () -> Unit, onSelect: (String) -> Unit) {
     LaunchedEffect(Unit) {
         isDiscovering = true
         devices = discoverTcamCameras(timeoutMs = 8_000L)
+        // Remember every camera this scan found, whether or not the user ends up selecting it —
+        // matches tcamViewer2's Find Devices behavior of building up the Saved Cameras list from
+        // every resolve, not just the one eventually chosen.
+        devices.forEach { settingsManager.upsertSavedCamera(name = it.name, ip = it.ip) }
         isDiscovering = false
     }
 

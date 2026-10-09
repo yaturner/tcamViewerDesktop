@@ -3,7 +3,13 @@ package com.das.tcamviewerdesktop.util
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import org.json.JSONArray
+import org.json.JSONObject
 import java.util.prefs.Preferences
+
+/** A camera remembered from a past Find Cameras scan or a successful connect.
+ *  [name] is the mDNS service name when known, or just [ip] as a fallback. */
+data class SavedCamera(val name: String, val ip: String)
 
 /** Desktop stand-in for tcamViewer2's DataStore-backed SettingsDataManager — same key set and
  *  Flow-based read API, backed by java.util.prefs.Preferences (a per-OS-user settings store,
@@ -13,11 +19,46 @@ import java.util.prefs.Preferences
 class SettingsManager {
     private val prefs = Preferences.userRoot().node("com/das/tcamviewerdesktop")
 
+    companion object {
+        private const val MAX_SAVED_CAMERAS = 20
+
+        private fun decodeSavedCameras(raw: String): List<SavedCamera> {
+            if (raw.isEmpty()) return emptyList()
+            return try {
+                val array = JSONArray(raw)
+                (0 until array.length()).map { i ->
+                    val obj = array.getJSONObject(i)
+                    SavedCamera(name = obj.getString("name"), ip = obj.getString("ip"))
+                }
+            } catch (e: Exception) {
+                emptyList()
+            }
+        }
+
+        private fun encodeSavedCameras(cameras: List<SavedCamera>): String {
+            val array = JSONArray()
+            cameras.forEach { camera ->
+                array.put(JSONObject().put("name", camera.name).put("ip", camera.ip))
+            }
+            return array.toString()
+        }
+    }
+
     private fun stringFlow(key: String, default: String): MutableStateFlow<String> =
         MutableStateFlow(prefs.get(key, default))
 
     private fun boolFlow(key: String, default: Boolean): MutableStateFlow<Boolean> =
         MutableStateFlow(prefs.getBoolean(key, default))
+
+    /** Most-recently-seen first. See [upsertSavedCamera]. */
+    private val _savedCameras = MutableStateFlow(decodeSavedCameras(prefs.get("saved_cameras", "")))
+    val savedCamerasFlow: StateFlow<List<SavedCamera>> = _savedCameras.asStateFlow()
+
+    /** Whether to connect automatically to the most-recently-used saved camera on launch. Off
+     *  by default — a new behavior like this shouldn't surprise existing users who already have
+     *  saved cameras from before this setting existed. */
+    private val _autoConnect = boolFlow("auto_connect", false)
+    val autoConnectFlow: StateFlow<Boolean> = _autoConnect.asStateFlow()
 
     private val _cameraIp = stringFlow("camera_ip", "192.168.4.1")
     val cameraIpFlow: StateFlow<String> = _cameraIp.asStateFlow()
@@ -108,7 +149,33 @@ class SettingsManager {
 
     fun saveCameraGainMode(mode: Int) { prefs.putInt("camera_gain_mode", mode); _cameraGainMode.value = mode }
 
+    /** Adds [ip] to the saved-cameras list, or moves it to the front if already present. [name]
+     *  is used only when better than what's already saved for this [ip] — a bare-IP fallback (as
+     *  CameraViewModel passes for a manually-typed connection) never overwrites a friendlier
+     *  name learned from an earlier mDNS discovery. */
+    fun upsertSavedCamera(name: String, ip: String) {
+        val current = _savedCameras.value
+        val existing = current.find { it.ip == ip }
+        val resolvedName = if (name == ip && existing != null) existing.name else name
+        val updated = listOf(SavedCamera(resolvedName, ip)) + current.filter { it.ip != ip }
+        val trimmed = updated.take(MAX_SAVED_CAMERAS)
+        prefs.put("saved_cameras", encodeSavedCameras(trimmed))
+        _savedCameras.value = trimmed
+    }
+
+    fun removeSavedCamera(ip: String) {
+        val updated = _savedCameras.value.filter { it.ip != ip }
+        prefs.put("saved_cameras", encodeSavedCameras(updated))
+        _savedCameras.value = updated
+    }
+
+    fun saveAutoConnect(enabled: Boolean) { prefs.putBoolean("auto_connect", enabled); _autoConnect.value = enabled }
+
     fun getCameraIp(): String = _cameraIp.value
+
+    fun getSavedCameras(): List<SavedCamera> = _savedCameras.value
+
+    fun getAutoConnect(): Boolean = _autoConnect.value
 
     fun isUnitsCelsius(): Boolean = _temperatureUnit.value == "Celsius"
 }
