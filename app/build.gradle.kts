@@ -33,7 +33,7 @@ compose.desktop {
         mainClass = "com.das.tcamviewerdesktop.MainKt"
 
         nativeDistributions {
-            targetFormats(TargetFormat.Deb, TargetFormat.AppImage)
+            targetFormats(TargetFormat.Deb, TargetFormat.Rpm, TargetFormat.AppImage)
             packageName = "tcamViewerDesktop"
             packageVersion = "1.1.0"
             description = "Desktop viewer for the tCam thermal imaging camera"
