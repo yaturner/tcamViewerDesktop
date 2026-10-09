@@ -78,7 +78,7 @@ import kotlinx.coroutines.withContext
 import java.io.File
 import java.util.Date
 
-/** Library tab: browses saved `.tjsn` frames, `.mtjsn` recordings, and `.tltjsn` time lapses
+/** Library tab: browses saved `.tjsn` frames, `.tmjsn` recordings, and `.tltjsn` time lapses
  *  under `~/tCamViewer/{Pictures,Movies}`, grouped by date folder, with multi-select delete, a
  *  date-range filter, a full-size browse view (Export to composite PNG), and video playback for
  *  recordings/time lapses. Ported from tcamViewer2's Android LibraryScreen — no MP4 export/share
@@ -109,7 +109,10 @@ fun LibraryScreen(modifier: Modifier = Modifier, onShowMessage: (String) -> Unit
                     ?.filter { it.isDirectory }
                     ?.forEach { dateDir ->
                         val files = dateDir.listFiles { f ->
-                            f.extension == "tjsn" || f.extension == "mtjsn" || f.extension == "tltjsn"
+                            // "mtjsn" is the legacy extension (renamed to "tmjsn" for new
+                            // recordings); still recognized so existing files stay visible.
+                            f.extension == "tjsn" || f.extension == "tmjsn" || f.extension == "mtjsn" ||
+                                f.extension == "tltjsn"
                         } ?: return@forEach
                         if (files.isNotEmpty()) folderMap.getOrPut(dateDir.name) { mutableListOf() }.addAll(files)
                     }
@@ -350,7 +353,7 @@ internal fun DateFilterDialog(
 @Composable
 private fun ThumbnailGridCell(file: File, isSelected: Boolean, onClick: () -> Unit, onPlay: () -> Unit) {
     var thumbnail by remember(file) { mutableStateOf<ImageBitmap?>(null) }
-    val isVideo = file.extension == "mtjsn" || file.extension == "tltjsn"
+    val isVideo = file.extension == "tmjsn" || file.extension == "mtjsn" || file.extension == "tltjsn"
 
     LaunchedEffect(file) {
         thumbnail = withContext(Dispatchers.Default) {
@@ -393,7 +396,7 @@ private fun ThumbnailGridCell(file: File, isSelected: Boolean, onClick: () -> Un
                     modifier = Modifier.align(Alignment.TopEnd).padding(4.dp).size(20.dp),
                 )
             }
-            if (file.extension == "mtjsn") {
+            if (file.extension == "tmjsn" || file.extension == "mtjsn") {
                 Icon(
                     Icons.Default.Videocam,
                     contentDescription = "Recording",

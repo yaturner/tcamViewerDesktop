@@ -65,7 +65,7 @@ private const val SKIP_FRAMES = 5
 
 private fun formatSpeed(v: Float): String = if (v == v.toInt().toFloat()) v.toInt().toString() else v.toString()
 
-/** Plays back a `.mtjsn` recording or `.tltjsn` time lapse frame-by-frame, mirroring the
+/** Plays back a `.tmjsn` (or legacy `.mtjsn`) recording or `.tltjsn` time lapse frame-by-frame, mirroring the
  *  Android app's VideoPlayerWindow (skip ±5 frames, play/pause, speed control for time lapses).
  *  No MP4 export/share here — no portable desktop video encoder wired up. */
 @Composable

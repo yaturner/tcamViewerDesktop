@@ -277,7 +277,7 @@ class CameraUtils {
         val rootDir = File(dataRoot, "Movies")
         val dir = File(rootDir, generateNewPath())
         if (!dir.exists()) dir.mkdirs()
-        val filename = "vid_" + simpleDateFormatFile.format(Date()) + ".mtjsn"
+        val filename = "vid_" + simpleDateFormatFile.format(Date()) + ".tmjsn"
         val file = File(dir, filename)
         return RecordingHandle(file, FileOutputStream(file))
     }

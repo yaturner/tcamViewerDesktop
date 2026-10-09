@@ -29,9 +29,14 @@ internal fun formatDateFolder(name: String): String {
     return "$month ${parts[1]}, ${parts[2]}"
 }
 
-/** img_HH_mm_ss.tjsn / vid_HH_mm_ss.mtjsn / tl_HH_mm_ss.tltjsn / chart_HH_mm_ss.tchart → "HH:mm:ss" */
+/**
+ * img_HH_mm_ss.tjsn / vid_HH_mm_ss.tmjsn / tl_HH_mm_ss.tltjsn / chart_HH_mm_ss.tchart → "HH:mm:ss"
+ * ".mtjsn" is the legacy video extension (renamed to ".tmjsn"); still handled here so recordings
+ * saved before the rename keep displaying correctly.
+ */
 internal fun formatFilename(name: String): String {
     val base = when {
+        name.endsWith(".tmjsn") -> name.removeSuffix(".tmjsn").removePrefix("vid_")
         name.endsWith(".mtjsn") -> name.removeSuffix(".mtjsn").removePrefix("vid_")
         name.endsWith(".tltjsn") -> name.removeSuffix(".tltjsn").removePrefix("tl_")
         name.endsWith(".tchart") -> name.removeSuffix(".tchart").removePrefix("chart_")
@@ -48,7 +53,7 @@ internal fun formatTemp(rawValue: Int, scale: Float, isCelsius: Boolean): String
 
 internal data class MtjsnContent(val frames: List<JSONObject>, val videoInfo: JSONObject?)
 
-/** Reads just the first radiometric frame of a `.mtjsn`/`.tltjsn` recording — used for thumbnails
+/** Reads just the first radiometric frame of a `.tmjsn` (or legacy `.mtjsn`)/`.tltjsn` recording — used for thumbnails
  *  where decoding every frame would be wasteful. */
 internal suspend fun readFirstMtjsnFrame(file: File): JSONObject? = withContext(Dispatchers.IO) {
     runCatching {
@@ -73,7 +78,7 @@ internal suspend fun readFirstMtjsnFrame(file: File): JSONObject? = withContext(
     }.getOrNull()
 }
 
-/** Reads every frame plus the trailing footer (video_info) of a `.mtjsn`/`.tltjsn` recording. */
+/** Reads every frame plus the trailing footer (video_info) of a `.tmjsn` (or legacy `.mtjsn`)/`.tltjsn` recording. */
 internal suspend fun readMtjsnContent(file: File): MtjsnContent = withContext(Dispatchers.IO) {
     val frames = mutableListOf<JSONObject>()
     val sb = StringBuilder()
