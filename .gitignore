@@ -10,3 +10,4 @@ flatpak/.flatpak-builder/
 flatpak/build-dir/
 flatpak/repo/
 flatpak/*.flatpak
+*.snap
