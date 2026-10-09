@@ -26,9 +26,11 @@ temperature readout.
 Ported from tcamViewer2's Android source: the TCP protocol layer (`net/CameraService.kt`),
 radiometric/telemetry decode + palette mapping (`util/CameraUtils.kt`, `model/ImageDto.kt`),
 and the full view-model (`model/CameraViewModel.kt`) — connect/disconnect with auto-reconnect,
-live streaming, point spotmeter + region measurement, AGC/manual-range/palette/units control,
-temperature-over-time history, temperature alerts, single-frame save, recording (`.mtjsn`), and
-time-lapse capture (`.tltjsn`).
+an idle-connection health check (`get_status` poll every 60s) alongside the streaming-side dead-
+connection watchdog, live streaming, point spotmeter + region measurement, AGC/manual-range/
+palette/units control, temperature-over-time history (capped at 10,000 samples, with a Stop/
+Resume control independent of Clear), temperature alerts, single-frame save, recording
+(`.tmjsn`, with legacy `.mtjsn` files still recognized), and time-lapse capture (`.tltjsn`).
 
 The UI has four tabs behind a `NavigationRail` (`ui/App.kt`):
 - **Camera** (`ui/CameraScreen.kt`) — connect/Get/Stream/Record/Save, a flat field correction
@@ -36,13 +38,17 @@ The UI has four tabs behind a `NavigationRail` (`ui/App.kt`):
   live thermal image with spotmeter tap-to-move / region drag-to-move-or-resize overlay,
   temperature readouts, and the temperature-history chart.
 - **Settings** (`ui/SettingsScreen.kt`) — staged Save/Cancel editing (mirrors the Android app's
-  pattern) over camera IP (with an mDNS "Find tCam Devices" search button), palette, units,
-  manual range, shutter sound, spotmeter/region toggle, temperature alerts, and — while
-  connected — AGC/emissivity/gain mode and a WiFi config dialog with SSID scanning (`nmcli`).
-- **Library** (`ui/LibraryScreen.kt`) — browses saved `.tjsn` frames, `.mtjsn` recordings, and
+  pattern) over camera IP, a Saved Cameras quick-connect list (every camera found or connected to,
+  most-recent first) with an Auto-connect-on-launch toggle, an mDNS "Find tCam Devices" search
+  button, palette, units, manual range, shutter sound, spotmeter/region toggle, temperature
+  alerts, and — while connected — AGC/emissivity/gain mode and a WiFi config dialog with SSID
+  scanning (`nmcli`). Switching tabs away from Settings with unsaved changes asks to confirm.
+- **Library** (`ui/LibraryScreen.kt`) — browses saved `.tjsn` frames, `.tmjsn` recordings, and
   `.tltjsn` time lapses grouped by date folder, multi-select delete, a date-range filter, a
-  full-size browse view with Export-to-PNG, and frame-by-frame video playback
-  (`ui/VideoPlayerWindow.kt`) with skip ±5, play/pause, and speed control for time lapses.
+  full-size browse view with Export-to-PNG, frame-by-frame video playback
+  (`ui/VideoPlayerWindow.kt`) with skip ±5, play/pause, and speed control for time lapses, and
+  (on a full tCam with a micro-SD card) a "Download from camera" browser
+  (`ui/CameraDownloadWindow.kt`) for pulling images straight off the camera's filesystem.
 - **Charts** (`ui/ChartsScreen.kt`) — browses saved `.tchart` temperature-history files the same
   way, with a full chart view on browse.
 

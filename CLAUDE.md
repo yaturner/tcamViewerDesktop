@@ -85,11 +85,12 @@ lateinit var settingsManager: SettingsManager
 
 | Class | Role |
 |-------|------|
-| `net/CameraService.kt` | Owns the TCP socket and all I/O. Same `sendCmd()`/`pendingRequests`/`imageChannel` design as tcamViewer2's `CameraService`, minus the `android.app.Service` wrapper (no Binder/Intent needed). |
+| `net/CameraService.kt` | Owns the TCP socket and all I/O. Same `sendCmd()`/`pendingRequests`/`imageChannel` design as tcamViewer2's `CameraService`, minus the `android.app.Service` wrapper (no Binder/Intent needed). Also probes per-connection filesystem support (`supportsFilesystem`, full tCam with micro-SD only) and runs an idle-connection health check alongside the streaming-side dead-connection watchdog. |
 | `model/CameraViewModel.kt` | Full app state as `StateFlow`s (connection, spot/max/min/region temps, histogram, streaming/recording/time-lapse, temperature history, alerts) — ported logic-for-logic from the Android view model. |
 | `util/CameraUtils.kt` | Image processing: decodes base64 radiometric/telemetry, maps pixel values through the active palette to an `IntArray` of ARGB pixels. |
 | `factory/PaletteFactory.kt` + `palette/*.kt` | Same 10 color palettes as tcamViewer2 (Arctic, Banded, Blackhot, DoubleRainbow, Fusion, Gray, Ironblack, Isotherm, Rainbow, Sepia). |
-| `util/SettingsManager.kt` | Desktop stand-in for tcamViewer2's DataStore-backed `SettingsDataManager` — same key set and `Flow`-based read API, backed by `java.util.prefs.Preferences` instead of DataStore. |
+| `util/SettingsManager.kt` | Desktop stand-in for tcamViewer2's DataStore-backed `SettingsDataManager` — same key set and `Flow`-based read API, backed by `java.util.prefs.Preferences` instead of DataStore. Also holds the Saved Cameras list (most-recent first) and the Auto-connect-on-launch flag. |
+| `util/DeviceFiles.kt` | Helpers for files on a full tCam's micro-SD card — name-list parsing, path-safety checks, and `saveImage()`'s write-through-`.part`-file pattern, ported from Android's `DeviceFiles`. |
 | `net/CameraDiscovery.kt` | mDNS discovery via [JmDNS](https://github.com/jmdns/jmdns) (the desktop JVM has no built-in mDNS client like Android's `NsdManager`). Binds a separate JmDNS instance to every active non-loopback IPv4 interface and merges results, since a plain `JmDNS.create()` can silently miss cameras on a multi-homed machine. Also used by `CameraViewModel`'s auto-reconnect as a fallback scan after a few failed retries at the last-known IP. |
 | `util/WifiScanner.kt` | Shells out to `nmcli` for WiFi SSID scanning (no portable desktop WiFi-scan API like Android's `WifiManager`). |
 | `util/CompositeExport.kt` | Builds the colorized image + header/sidebar/footer chrome (color bar, spotmeter arrow, max/min, gain/emissivity/date-time), ported from Android's `buildShareBitmap()`; saves to `~/tCamViewer/Exports/` instead of sharing via `Intent.ACTION_SEND`. |
@@ -101,12 +102,14 @@ lateinit var settingsManager: SettingsManager
   thermal image with spotmeter tap-to-move / region drag-to-move-or-resize overlay, temperature
   readouts, temperature-history chart.
 - `ui/SettingsScreen.kt` — staged Save/Cancel editing (same pattern as tcamViewer2's Settings tab)
-  over camera IP (with mDNS "Find tCam Devices"), palette, units, manual range, shutter sound,
-  spotmeter/region toggle, temperature alerts, and — while connected — AGC/emissivity/gain mode
-  and a WiFi config dialog with `nmcli` SSID scanning.
-- `ui/LibraryScreen.kt` — browses saved `.tjsn`/`.mtjsn`/`.tltjsn` files grouped by date, multi-
-  select delete, date-range filter, full-size browse with Export-to-PNG, and frame-by-frame video
-  playback (`ui/VideoPlayerWindow.kt`) with skip ±5, play/pause, and speed control.
+  over camera IP, a Saved Cameras quick-connect list with Auto-connect-on-launch, mDNS "Find tCam
+  Devices", palette, units, manual range, shutter sound, spotmeter/region toggle, temperature
+  alerts, and — while connected — AGC/emissivity/gain mode and a WiFi config dialog with `nmcli`
+  SSID scanning. `ui/App.kt` intercepts a tab switch away from Settings with unsaved changes.
+- `ui/LibraryScreen.kt` — browses saved `.tjsn`/`.tmjsn`/`.tltjsn` files grouped by date, multi-
+  select delete, date-range filter, full-size browse with Export-to-PNG, frame-by-frame video
+  playback (`ui/VideoPlayerWindow.kt`) with skip ±5, play/pause, and speed control, and (full tCam
+  only) "Download from camera" (`ui/CameraDownloadWindow.kt`) to pull files off its SD card.
 - `ui/ChartsScreen.kt` — browses saved `.tchart` files the same way, with a full chart view.
 
 Saved files land under `~/tCamViewer/{Pictures,Movies,Charts,Exports}/MM_DD_YYYY/`.
