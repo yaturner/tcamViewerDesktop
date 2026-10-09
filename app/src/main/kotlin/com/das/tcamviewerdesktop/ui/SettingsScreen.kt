@@ -54,7 +54,12 @@ import com.das.tcamviewerdesktop.util.scanWifiNetworks
  *  the Android app's SettingsScreen. mDNS "Find tCam Devices" is ported (via JmDNS); WiFi SSID
  *  scanning uses `nmcli` (see [scanWifiNetworks]). */
 @Composable
-fun SettingsScreen(viewModel: CameraViewModel, modifier: Modifier = Modifier, onNavigateBack: () -> Unit = {}) {
+fun SettingsScreen(
+    viewModel: CameraViewModel,
+    modifier: Modifier = Modifier,
+    onNavigateBack: () -> Unit = {},
+    onUnsavedChangesChanged: (Boolean) -> Unit = {},
+) {
     val isConnected by viewModel.isConnected.collectAsState()
     val cameraConfig by viewModel.cameraConfig.collectAsState()
 
@@ -97,6 +102,26 @@ fun SettingsScreen(viewModel: CameraViewModel, modifier: Modifier = Modifier, on
     var localAgc by remember(savedCameraAgc, resetKey) { mutableStateOf(savedCameraAgc) }
     var localEmissivity by remember(savedCameraEmissivity, resetKey) { mutableStateOf(savedCameraEmissivity) }
     var localGainMode by remember(savedCameraGainMode, resetKey) { mutableStateOf(savedCameraGainMode) }
+
+    val hasUnsavedChanges =
+        localAutoConnect != savedAutoConnect ||
+            localIp != savedIp ||
+            localManualRange != savedManualRange ||
+            localMin != savedMin ||
+            localMax != savedMax ||
+            localPalette != savedPalette ||
+            localShutter != savedShutter ||
+            localSpotmeter != savedSpotmeter ||
+            localRegion != savedRegion ||
+            localAlertEnabled != savedAlertEnabled ||
+            localAlertMetric != savedAlertMetric ||
+            localAlertComparison != savedAlertComparison ||
+            localAlertThreshold != savedAlertThreshold ||
+            localUnit != savedUnit ||
+            localAgc != savedCameraAgc ||
+            localEmissivity != savedCameraEmissivity ||
+            localGainMode != savedCameraGainMode
+    LaunchedEffect(hasUnsavedChanges) { onUnsavedChangesChanged(hasUnsavedChanges) }
 
     var showIpChangeConfirm by remember { mutableStateOf(false) }
     var showWifiDialog by remember { mutableStateOf(false) }

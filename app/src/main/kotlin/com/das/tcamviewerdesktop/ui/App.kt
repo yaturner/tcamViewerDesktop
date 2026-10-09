@@ -45,6 +45,16 @@ fun App(viewModel: CameraViewModel) {
         coroutineScope.launch { snackbarHostState.showSnackbar(text) }
     }
 
+    var settingsHasUnsavedChanges by remember { mutableStateOf(false) }
+    var pendingScreen by remember { mutableStateOf<Screen?>(null) }
+    fun requestScreen(target: Screen) {
+        if (screen == Screen.SETTINGS && target != Screen.SETTINGS && settingsHasUnsavedChanges) {
+            pendingScreen = target
+        } else {
+            screen = target
+        }
+    }
+
     MaterialTheme {
         Box(modifier = Modifier.fillMaxSize()) {
             Surface(modifier = Modifier.fillMaxSize()) {
@@ -52,25 +62,25 @@ fun App(viewModel: CameraViewModel) {
                     NavigationRail {
                         NavigationRailItem(
                             selected = screen == Screen.CAMERA,
-                            onClick = { screen = Screen.CAMERA },
+                            onClick = { requestScreen(Screen.CAMERA) },
                             icon = { Icon(Icons.Filled.Videocam, contentDescription = Screen.CAMERA.label) },
                             label = { Text(Screen.CAMERA.label) },
                         )
                         NavigationRailItem(
                             selected = screen == Screen.SETTINGS,
-                            onClick = { screen = Screen.SETTINGS },
+                            onClick = { requestScreen(Screen.SETTINGS) },
                             icon = { Icon(Icons.Filled.Settings, contentDescription = Screen.SETTINGS.label) },
                             label = { Text(Screen.SETTINGS.label) },
                         )
                         NavigationRailItem(
                             selected = screen == Screen.LIBRARY,
-                            onClick = { screen = Screen.LIBRARY },
+                            onClick = { requestScreen(Screen.LIBRARY) },
                             icon = { Icon(Icons.Filled.PhotoLibrary, contentDescription = Screen.LIBRARY.label) },
                             label = { Text(Screen.LIBRARY.label) },
                         )
                         NavigationRailItem(
                             selected = screen == Screen.CHARTS,
-                            onClick = { screen = Screen.CHARTS },
+                            onClick = { requestScreen(Screen.CHARTS) },
                             icon = { Icon(Icons.Filled.ShowChart, contentDescription = Screen.CHARTS.label) },
                             label = { Text(Screen.CHARTS.label) },
                         )
@@ -85,6 +95,7 @@ fun App(viewModel: CameraViewModel) {
                             viewModel,
                             modifier = Modifier.fillMaxSize(),
                             onNavigateBack = { screen = Screen.CAMERA },
+                            onUnsavedChangesChanged = { settingsHasUnsavedChanges = it },
                         )
                         Screen.LIBRARY -> LibraryScreen(
                             modifier = Modifier.fillMaxSize(),
@@ -93,6 +104,23 @@ fun App(viewModel: CameraViewModel) {
                         Screen.CHARTS -> ChartsScreen(modifier = Modifier.fillMaxSize())
                     }
                 }
+            }
+
+            pendingScreen?.let { target ->
+                AlertDialog(
+                    onDismissRequest = { pendingScreen = null },
+                    title = { Text("Discard changes?") },
+                    text = { Text("Your unsaved changes will be lost.") },
+                    confirmButton = {
+                        TextButton(onClick = {
+                            pendingScreen = null
+                            screen = target
+                        }) { Text("Discard") }
+                    },
+                    dismissButton = {
+                        TextButton(onClick = { pendingScreen = null }) { Text("Keep editing") }
+                    },
+                )
             }
 
             val showConnectError by viewModel.showConnectError.collectAsState()
