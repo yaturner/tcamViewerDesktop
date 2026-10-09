@@ -24,6 +24,8 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Camera
 import androidx.compose.material.icons.filled.CenterFocusStrong
 import androidx.compose.material.icons.filled.Clear
+import androidx.compose.material.icons.filled.Pause
+import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.DropdownMenu
@@ -207,6 +209,16 @@ fun CameraScreen(viewModel: CameraViewModel, modifier: Modifier = Modifier, onSh
         Spacer(Modifier.height(16.dp))
         Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
             Text("Temperature History", style = MaterialTheme.typography.titleSmall, modifier = Modifier.weight(1f))
+            val isChartHistoryPaused by viewModel.isChartHistoryPaused.collectAsState()
+            // Stops new samples from being recorded, independent of Clear — lets a long session
+            // (or time lapse) be left running without the chart growing forever. Doesn't affect
+            // an in-progress time-lapse capture itself.
+            IconButton(onClick = { viewModel.toggleChartHistoryPaused() }) {
+                Icon(
+                    if (isChartHistoryPaused) Icons.Filled.PlayArrow else Icons.Filled.Pause,
+                    contentDescription = if (isChartHistoryPaused) "Resume temperature history" else "Stop temperature history",
+                )
+            }
             IconButton(onClick = { viewModel.clearChartHistory() }) {
                 Icon(Icons.Filled.Clear, contentDescription = "Clear temperature history")
             }

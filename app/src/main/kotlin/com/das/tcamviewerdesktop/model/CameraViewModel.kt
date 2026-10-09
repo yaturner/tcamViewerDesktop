@@ -187,6 +187,18 @@ class CameraViewModel {
 
     @Volatile private var tempHistoryWindowOverrideMs: Long? = null
 
+    // Hard cap independent of the time window above — the window override during a time lapse
+    // otherwise has no ceiling at all (24h at a 1s interval is ~86,400 samples and growing the
+    // whole time it runs). When exceeded, recordTempSample() halves resolution instead of
+    // truncating the oldest half, so a long lapse's chart keeps its overall shape.
+    private val maxTempSamples = 10_000
+
+    // Pauses new samples from being recorded without affecting an in-progress time-lapse capture
+    // itself — the literal "Stop button" from tcamViewer2 issue #28.
+    @Volatile private var tempHistoryPaused = false
+    private val _isChartHistoryPaused = MutableStateFlow(false)
+    val isChartHistoryPaused: StateFlow<Boolean> = _isChartHistoryPaused.asStateFlow()
+
     @Volatile private var shutterSoundEnabled = true
 
     @Volatile private var manualGetPending = false
@@ -442,12 +454,18 @@ class CameraViewModel {
     }
 
     private fun recordTempSample(spot: Float, max: Float, min: Float) {
+        if (tempHistoryPaused) return
         val now = System.currentTimeMillis()
         val snapshot = synchronized(tempHistoryBuffer) {
             tempHistoryBuffer.addLast(TempSample(now, spot, max, min))
             val cutoff = now - (tempHistoryWindowOverrideMs ?: tempHistoryWindowMs)
             while (tempHistoryBuffer.isNotEmpty() && tempHistoryBuffer.first().timestampMs < cutoff) {
                 tempHistoryBuffer.removeFirst()
+            }
+            if (tempHistoryBuffer.size > maxTempSamples) {
+                val decimated = tempHistoryBuffer.filterIndexed { index, _ -> index % 2 == 0 }
+                tempHistoryBuffer.clear()
+                tempHistoryBuffer.addAll(decimated)
             }
             tempHistoryBuffer.toList()
         }
@@ -457,6 +475,15 @@ class CameraViewModel {
     private fun clearTempHistory() {
         synchronized(tempHistoryBuffer) { tempHistoryBuffer.clear() }
         _tempHistory.value = emptyList()
+        tempHistoryPaused = false
+        _isChartHistoryPaused.value = false
+    }
+
+    /** User-triggered Stop/Resume from the Temperature History dialog — stops new samples from
+     *  being recorded without affecting an in-progress time-lapse capture itself. */
+    fun toggleChartHistoryPaused() {
+        tempHistoryPaused = !tempHistoryPaused
+        _isChartHistoryPaused.value = tempHistoryPaused
     }
 
     fun clearChartHistory() = clearTempHistory()
