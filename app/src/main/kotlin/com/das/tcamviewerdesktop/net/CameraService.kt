@@ -34,8 +34,25 @@ import java.util.logging.Logger
 class CameraService {
     companion object {
         // Bounds how long a read() call blocks so the listening loop stays responsive to
-        // disconnect()/stopListening() instead of sitting in a blocking syscall indefinitely.
-        private const val SOCKET_READ_TIMEOUT_MS = 30_000
+        // disconnect()/stopListening() instead of sitting in a blocking syscall indefinitely —
+        // important on the flaky WiFi links this app talks to, where the camera can go quiet
+        // for a while (modem-sleep) without that meaning the connection actually died.
+        private const val SOCKET_READ_TIMEOUT_MS = 12_000
+
+        // While actively streaming, frames should arrive far more often than the read timeout
+        // above — total silence for this many consecutive cycles means the camera vanished
+        // without a graceful close, which a plain socket-error/EOF check alone won't detect: a
+        // dead peer doesn't send a FIN/RST, so the socket just keeps timing out forever and
+        // looks identical to a legitimately idle (not streaming) link.
+        private const val MAX_CONSECUTIVE_READ_TIMEOUTS_WHILE_STREAMING = 2
+
+        // The streaming check above only covers connections actively producing frames. A
+        // connected-but-idle link (just Get, or nothing at all) can go silently dead the same
+        // way — read() alone can't tell, since a dead peer never sends a FIN/RST — so poll it
+        // with a real request/response every interval while idle.
+        private const val IDLE_HEALTH_CHECK_INTERVAL_MS = 60_000L
+        private const val IDLE_HEALTH_CHECK_TIMEOUT_MS = 5_000L
+
         private val log = Logger.getLogger(CameraService::class.java.name)
     }
 
@@ -50,6 +67,7 @@ class CameraService {
 
     private val serviceScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
     private var listeningJob: Job? = null
+    private var idleHealthCheckJob: Job? = null
 
     private val pendingRequests = ConcurrentHashMap<String, CompletableDeferred<JSONObject>>()
 
@@ -90,6 +108,8 @@ class CameraService {
         teardownConnection()
         listeningJob?.cancelAndJoin()
         listeningJob = null
+        idleHealthCheckJob?.cancelAndJoin()
+        idleHealthCheckJob = null
         resetBuffers()
         running = true
         val connected =
@@ -113,6 +133,7 @@ class CameraService {
         connectedFlag = connected
         if (connected) {
             startListening()
+            startIdleHealthCheck()
             // tCam-Mini has no battery-backed RTC, so it powers up with whatever time it last
             // had (or none at all) — push this machine's clock to it on every fresh connection
             // so saved images/recordings get sane timestamps. tCam itself has a battery-backed
@@ -127,9 +148,34 @@ class CameraService {
         listeningJob?.cancel()
     }
 
+    /** Polls a connected-but-idle link with a real request/response every interval so a camera
+     *  that silently vanished (no FIN/RST) doesn't sit "connected" forever — the counterpart to
+     *  the streaming-side check in [startListening]. No-ops while streaming, since frames
+     *  arriving is itself a much faster liveness signal than this could ever be. */
+    private fun startIdleHealthCheck() {
+        idleHealthCheckJob =
+            serviceScope.launch {
+                while (isConnected && running) {
+                    delay(IDLE_HEALTH_CHECK_INTERVAL_MS)
+                    if (!isConnected || !running || isStreaming) continue
+                    val response = sendCmd(Constants.CMD_GET_STATUS, expectedKey = "status", timeoutMillis = IDLE_HEALTH_CHECK_TIMEOUT_MS)
+                    if (response.has("error") && isConnected && running && !isStreaming) {
+                        log.warning("Idle health check got no response — treating camera as disconnected")
+                        running = false
+                        teardownConnection()
+                        failPendingRequests("Idle health check failed")
+                        listeningJob?.cancel()
+                        connectionLostSubject.onNext(Unit)
+                        break
+                    }
+                }
+            }
+    }
+
     fun disconnect() {
         stopStreaming()
         running = false
+        idleHealthCheckJob?.cancel()
         teardownConnection()
         listeningJob?.cancel()
         failPendingRequests("Disconnected")
@@ -328,12 +374,28 @@ class CameraService {
         listeningJob =
             serviceScope.launch {
                 val input = inFromSocket ?: return@launch
+                var consecutiveReadTimeouts = 0
                 while (isConnected && running) {
                     try {
                         bytesRead = input.read(readBuffer)
+                        consecutiveReadTimeouts = 0
                     } catch (e: java.net.SocketTimeoutException) {
-                        // Just an idle link — not necessarily dead. Loop back so a concurrent
-                        // disconnect() is noticed promptly.
+                        consecutiveReadTimeouts++
+                        if (isStreaming && consecutiveReadTimeouts >= MAX_CONSECUTIVE_READ_TIMEOUTS_WHILE_STREAMING) {
+                            log.warning(
+                                "No frames for ${consecutiveReadTimeouts * SOCKET_READ_TIMEOUT_MS}ms " +
+                                    "while streaming — treating camera as disconnected",
+                            )
+                            val wasRunning = running
+                            running = false
+                            teardownConnection()
+                            failPendingRequests("No data received while streaming")
+                            if (wasRunning) connectionLostSubject.onNext(Unit)
+                            break
+                        }
+                        // Just an idle link (e.g. camera modem-sleep) — not necessarily dead.
+                        // Looping back re-checks isConnected/running so a concurrent disconnect()
+                        // is noticed promptly instead of blocking another full read() cycle.
                         continue
                     } catch (e: java.io.IOException) {
                         log.log(Level.WARNING, "Socket read error — tearing down connection", e)
