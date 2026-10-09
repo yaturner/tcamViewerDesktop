@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=tCam Viewer Desktop
+Comment=Desktop viewer for the tCam thermal imaging camera
+Exec=tcamViewerDesktop
+Icon=io.github.yaturner.tcamViewerDesktop
+Categories=Graphics;Viewer;
+Terminal=false

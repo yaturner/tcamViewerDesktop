@@ -1,0 +1,42 @@
+app-id: io.github.yaturner.tcamViewerDesktop
+runtime: org.freedesktop.Platform
+runtime-version: '25.08'
+sdk: org.freedesktop.Sdk
+command: tcamViewerDesktop
+finish-args:
+  - --socket=x11
+  - --socket=wayland
+  - --socket=pulseaudio
+  - --share=network
+  - --device=dri
+  # The app's own save directory and java.util.prefs settings backing store
+  # both live under the real $HOME, not an XDG-sandboxed location (see
+  # SettingsManager/CameraUtils.dataRoot) — broad home access until those
+  # are made flatpak-aware.
+  - --filesystem=home
+modules:
+  - name: tcamviewerdesktop
+    buildsystem: simple
+    build-commands:
+      - mkdir -p /app/bin /app/lib
+      - cp -r lib/* /app/lib/
+      - cp bin/tcamViewerDesktop /app/bin/tcamViewerDesktop
+      - chmod +x /app/bin/tcamViewerDesktop
+      - install -Dm644 io.github.yaturner.tcamViewerDesktop.desktop
+        /app/share/applications/io.github.yaturner.tcamViewerDesktop.desktop
+      - install -Dm644 io.github.yaturner.tcamViewerDesktop.png
+        /app/share/icons/hicolor/256x256/apps/io.github.yaturner.tcamViewerDesktop.png
+      - install -Dm644 io.github.yaturner.tcamViewerDesktop.metainfo.xml
+        /app/share/metainfo/io.github.yaturner.tcamViewerDesktop.metainfo.xml
+    sources:
+      # Downloads the exact binary already published as a GitHub Release asset
+      # (see Prebuilt releases) rather than committing it to this repo.
+      - type: archive
+        url: https://github.com/yaturner/tcamViewerDesktop/releases/download/v1.1.0/tcamViewerDesktop-1.1.0-linux-x64.tar.gz
+        sha256: 065aa502413c2df410778779cf6b171ae058a2b85b990dbbb47a5935589b6473
+      - type: file
+        path: io.github.yaturner.tcamViewerDesktop.desktop
+      - type: file
+        path: io.github.yaturner.tcamViewerDesktop.metainfo.xml
+      - type: file
+        path: io.github.yaturner.tcamViewerDesktop.png

@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>io.github.yaturner.tcamViewerDesktop</id>
+  <name>tCam Viewer Desktop</name>
+  <summary>Desktop viewer for the tCam thermal imaging camera</summary>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>GPL-3.0-only</project_license>
+  <description>
+    <p>
+      Connects to a tCam thermal imaging camera over WiFi, decodes its radiometric
+      and telemetry data, and displays live thermal video with spotmeter or region
+      temperature measurement, ten color palettes, recording, time-lapse capture,
+      and rolling temperature-history charts — a Linux desktop port of the
+      tCam Viewer Android app.
+    </p>
+  </description>
+  <launchable type="desktop-id">io.github.yaturner.tcamViewerDesktop.desktop</launchable>
+  <url type="homepage">https://github.com/yaturner/tcamViewerDesktop</url>
+  <url type="bugtracker">https://github.com/yaturner/tcamViewerDesktop/issues</url>
+  <content_rating type="oars-1.1" />
+  <releases>
+    <release version="1.1.0" date="2026-10-09" />
+  </releases>
+</component>
