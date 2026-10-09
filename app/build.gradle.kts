@@ -35,7 +35,7 @@ compose.desktop {
         nativeDistributions {
             targetFormats(TargetFormat.Deb, TargetFormat.AppImage)
             packageName = "tcamViewerDesktop"
-            packageVersion = "1.0.0"
+            packageVersion = "1.1.0"
             description = "Desktop viewer for the tCam thermal imaging camera"
             vendor = "yaturner"
         }
