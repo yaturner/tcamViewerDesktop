@@ -8,17 +8,20 @@
 # downloads to ./build/appimagetool if not already on PATH.
 #
 # Usage: ./scripts/build-appimage.sh [version]
-# Output: build/tcamViewerDesktop-<version>-x86_64.AppImage
+# Output: build/tcamViewerDesktop-<version>-<arch>.AppImage (arch from `uname -m`,
+# e.g. x86_64 or aarch64 — matches both jpackage's host-arch output and
+# appimagetool's own per-arch release asset naming)
 
 set -eu
 
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$REPO_ROOT"
 
+ARCH="$(uname -m)"
 VERSION="${1:-$(grep -oP '(?<=packageVersion = ")[^"]+' app/build.gradle.kts)}"
 APP_IMAGE_DIR="app/build/compose/binaries/main/app/tcamViewerDesktop"
 APPDIR="build/AppDir"
-OUTPUT="build/tcamViewerDesktop-${VERSION}-x86_64.AppImage"
+OUTPUT="build/tcamViewerDesktop-${VERSION}-${ARCH}.AppImage"
 
 echo "Building app-image (jpackage output)..."
 ./gradlew packageAppImage
@@ -51,11 +54,11 @@ APPIMAGETOOL="$(command -v appimagetool || echo "$REPO_ROOT/build/appimagetool")
 if ! command -v appimagetool >/dev/null 2>&1 && [ ! -x "$APPIMAGETOOL" ]; then
     echo "Downloading appimagetool..."
     curl -fsSL -o "$APPIMAGETOOL" \
-        "https://github.com/AppImage/appimagetool/releases/download/continuous/appimagetool-x86_64.AppImage"
+        "https://github.com/AppImage/appimagetool/releases/download/continuous/appimagetool-${ARCH}.AppImage"
     chmod +x "$APPIMAGETOOL"
 fi
 
 echo "Packaging AppImage..."
-ARCH=x86_64 "$APPIMAGETOOL" "$APPDIR" "$OUTPUT"
+ARCH="$ARCH" "$APPIMAGETOOL" "$APPDIR" "$OUTPUT"
 
 echo "Done: $OUTPUT"
