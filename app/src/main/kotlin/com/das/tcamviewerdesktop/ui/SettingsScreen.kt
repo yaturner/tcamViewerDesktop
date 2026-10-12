@@ -5,8 +5,10 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
@@ -14,6 +16,7 @@ import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -62,6 +65,7 @@ fun SettingsScreen(
 ) {
     val isConnected by viewModel.isConnected.collectAsState()
     val cameraConfig by viewModel.cameraConfig.collectAsState()
+    val currentImageDto by viewModel.currentImageDto.collectAsState()
 
     val savedCameras by settingsManager.savedCamerasFlow.collectAsState()
     val savedAutoConnect by settingsManager.autoConnectFlow.collectAsState()
@@ -126,6 +130,7 @@ fun SettingsScreen(
     var showIpChangeConfirm by remember { mutableStateOf(false) }
     var showWifiDialog by remember { mutableStateOf(false) }
     var showDiscoveryDialog by remember { mutableStateOf(false) }
+    var showAboutDialog by remember { mutableStateOf(false) }
 
     fun performSave() {
         val cameraAgcOnDevice = cameraConfig?.agcEnabled ?: savedCameraAgc
@@ -316,6 +321,8 @@ fun SettingsScreen(
                     modifier = Modifier.fillMaxWidth(),
                 )
             }
+
+            InfoRow("About") { showAboutDialog = true }
         }
         HorizontalDivider()
         Row(
@@ -364,6 +371,56 @@ fun SettingsScreen(
             },
         )
     }
+
+    // About — author/websites/app version always shown; camera type and its reported firmware
+    // version only while connected, read from the current frame's metadata (no new protocol
+    // work — "Camera"/"Version" are already on every frame). Mirrors the Android app's dialog.
+    if (showAboutDialog) {
+        val cameraMetadata = currentImageDto?.metadata
+        AlertDialog(
+            onDismissRequest = { showAboutDialog = false },
+            title = { Text("About tCam Viewer") },
+            text = {
+                Column {
+                    Text("Author: James Turner")
+                    Text("App website:")
+                    Text(
+                        text = "tcamviewer.darcangel.com",
+                        color = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.clickable { openUrl("https://tcamviewer.darcangel.com") },
+                    )
+                    Text("Camera website:")
+                    Text(
+                        text = "danjuliodesigns.com",
+                        color = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.clickable { openUrl("https://danjuliodesigns.com") },
+                    )
+                    Text("App version: ${Constants.APP_VERSION}")
+                    if (isConnected) {
+                        Spacer(modifier = Modifier.height(12.dp))
+                        if (cameraMetadata != null) {
+                            Text("Camera: ${cameraMetadata.optString("Camera", "Unknown")}")
+                            Text("Camera version: ${cameraMetadata.optString("Version", "Unknown")}")
+                        } else {
+                            Text("Connected — camera info not yet available")
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { showAboutDialog = false }) { Text("Close") }
+            },
+        )
+    }
+}
+
+/** Opens [url] in the user's default browser. Not every window manager/Desktop environment
+ *  supports java.awt.Desktop's BROWSE action, so this silently no-ops on failure rather than
+ *  crashing the Settings screen over it. */
+private fun openUrl(url: String) {
+    runCatching {
+        java.awt.Desktop.getDesktop().browse(java.net.URI(url))
+    }
 }
 
 @Composable
@@ -376,6 +433,22 @@ private fun SwitchRow(label: String, checked: Boolean, onCheckedChange: (Boolean
     Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
         Text(label, modifier = Modifier.weight(1f))
         Switch(checked = checked, onCheckedChange = onCheckedChange)
+    }
+}
+
+@Composable
+private fun InfoRow(label: String, onClick: () -> Unit) {
+    Row(
+        modifier = Modifier.fillMaxWidth().clickable(onClick = onClick),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(modifier = Modifier.weight(1f)) {
+            Text(label)
+            Text("Tap to read", style = MaterialTheme.typography.bodySmall)
+        }
+        IconButton(onClick = onClick) {
+            Icon(Icons.Default.Info, contentDescription = label)
+        }
     }
 }
 

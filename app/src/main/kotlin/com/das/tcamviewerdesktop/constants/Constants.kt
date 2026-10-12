@@ -5,6 +5,10 @@ import java.util.Locale
 import java.util.regex.Pattern
 
 object Constants {
+    // Kept in sync by hand with compose.desktop.application.nativeDistributions.packageVersion
+    // in app/build.gradle.kts — no generated-BuildConfig equivalent for Compose Desktop.
+    const val APP_VERSION: String = "2.0.0"
+
     const val GAIN_MODE_HIGH: Int = 0
     const val GAIN_MODE_LOW: Int = 1
     const val GAIN_MODE_AUTO: Int = 2
