@@ -6,6 +6,8 @@ import com.das.tcamviewerdesktop.constants.Constants
 import com.das.tcamviewerdesktop.net.discoverTcamCameras
 import com.das.tcamviewerdesktop.paletteFactory
 import com.das.tcamviewerdesktop.settingsManager
+import com.das.tcamviewerdesktop.util.Firmware
+import com.das.tcamviewerdesktop.util.FirmwareImage
 import io.reactivex.rxjava3.disposables.Disposable
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
@@ -685,6 +687,130 @@ class CameraViewModel {
     fun runFfc() {
         if (!_isConnected.value) return
         cameraService.runFfc()
+    }
+
+    // --- Firmware update (ported from Dan Julio's tCam desktop app's Camera menu) ---
+
+    private val _firmwareCheck = MutableStateFlow<FirmwareCheck?>(null)
+    val firmwareCheck: StateFlow<FirmwareCheck?> = _firmwareCheck.asStateFlow()
+
+    private val _firmwareUpdate = MutableStateFlow<FirmwareUpdateState>(FirmwareUpdateState.Idle)
+    val firmwareUpdate: StateFlow<FirmwareUpdateState> = _firmwareUpdate.asStateFlow()
+
+    private var firmwareJob: Job? = null
+
+    /** Reads the camera's model/version with get_status, then fetches the latest release info
+     *  for that camera family from danjuliodesigns.com. */
+    fun checkFirmware() {
+        _firmwareCheck.value = FirmwareCheck(checking = true)
+        vmScope.launch(Dispatchers.IO) {
+            val status = cameraService.getStatus().optJSONObject("status")
+            if (status == null) {
+                _firmwareCheck.value = FirmwareCheck(checking = false, error = "Camera did not report its status")
+                return@launch
+            }
+            val camera =
+                FirmwareCheck(
+                    checking = false,
+                    cameraName = status.optString("Camera"),
+                    model = status.optInt("Model"),
+                    installedVersion = status.optString("Version"),
+                )
+            _firmwareCheck.value = camera.copy(checking = true)
+            _firmwareCheck.value =
+                try {
+                    camera.copy(latest = Firmware.fetchLatestInfo(camera.model))
+                } catch (e: Exception) {
+                    log.log(Level.WARNING, "Firmware version check failed", e)
+                    camera.copy(error = "Could not check danjuliodesigns.com: ${e.message}")
+                }
+        }
+    }
+
+    /** Downloads the latest release found by [checkFirmware] and installs it. */
+    fun installLatestFirmware() {
+        val check = _firmwareCheck.value ?: return
+        val latest = check.latest ?: return
+        firmwareJob?.cancel()
+        firmwareJob = vmScope.launch(Dispatchers.IO) {
+            _firmwareUpdate.value = FirmwareUpdateState.Downloading
+            val image =
+                try {
+                    Firmware.downloadLatest(latest, check.model)
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    log.log(Level.WARNING, "Firmware download failed", e)
+                    _firmwareUpdate.value = FirmwareUpdateState.Failed("Download failed: ${e.message}")
+                    return@launch
+                }
+            runFirmwareUpdate(image, check.model)
+        }
+    }
+
+    /** Installs a user-chosen application `.bin` (e.g. tCamMini.bin from a release zip). */
+    fun installFirmwareFile(file: File) {
+        val check = _firmwareCheck.value ?: return
+        firmwareJob?.cancel()
+        firmwareJob = vmScope.launch(Dispatchers.IO) {
+            val image = runCatching { Firmware.parseImage(file.readBytes()) }.getOrNull()
+            if (image == null) {
+                _firmwareUpdate.value =
+                    FirmwareUpdateState.Failed("${file.name} is not a camera firmware image")
+                return@launch
+            }
+            runFirmwareUpdate(image, check.model)
+        }
+    }
+
+    private suspend fun runFirmwareUpdate(image: FirmwareImage, model: Int) {
+        val expected = Firmware.expectedProjectName(model)
+        if (image.projectName != expected) {
+            _firmwareUpdate.value =
+                FirmwareUpdateState.Failed(
+                    "This is ${image.projectName} firmware; the connected ${Firmware.cameraTypeName(model)} needs $expected.bin",
+                )
+            return
+        }
+        if (!_isConnected.value) {
+            _firmwareUpdate.value = FirmwareUpdateState.Failed("Camera not connected")
+            return
+        }
+        if (_isTimeLapsing.value) {
+            _firmwareUpdate.value = FirmwareUpdateState.Failed("Stop the time lapse before updating firmware")
+            return
+        }
+        if (_isStreaming.value) {
+            withContext(Dispatchers.Default) { toggleStreaming() }
+            delay(1_000L) // let stream_off land so no frames interleave with the transfer
+        }
+        _firmwareUpdate.value = FirmwareUpdateState.WaitingForConfirmation(Firmware.isFullTcam(model), image.version)
+        _firmwareUpdate.value =
+            try {
+                val message =
+                    cameraService.updateFirmware(image.bytes, image.version) { sent ->
+                        _firmwareUpdate.value = FirmwareUpdateState.Transferring(sent, image.bytes.size)
+                    }
+                FirmwareUpdateState.Succeeded(message)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                log.log(Level.WARNING, "Firmware update failed", e)
+                FirmwareUpdateState.Failed(e.message ?: "Firmware update failed")
+            }
+    }
+
+    /** Stops our side of an update. The camera keeps its current firmware: OTA writes to the
+     *  inactive partition and the camera abandons it once it stops getting data. */
+    fun cancelFirmwareUpdate() {
+        firmwareJob?.cancel()
+        firmwareJob = null
+        _firmwareUpdate.value = FirmwareUpdateState.Idle
+    }
+
+    fun resetFirmwareUpdate() {
+        if (firmwareJob?.isActive == true) return
+        _firmwareUpdate.value = FirmwareUpdateState.Idle
     }
 
     fun startTimeLapse(intervalSec: Int, durationSec: Int) {

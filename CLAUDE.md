@@ -34,7 +34,7 @@ gradlew.bat packageMsi      # Windows (requires WiX Toolset on PATH)
 gradlew.bat packageExe      # Windows (requires Inno Setup on PATH)
 ```
 
-There is no linter/formatter task configured (no Spotless/ktlint), and no test sources exist yet.
+There is no linter/formatter task configured (no Spotless/ktlint). Unit tests live in `app/src/test/kotlin`.
 
 ## Architecture
 
@@ -95,6 +95,7 @@ lateinit var settingsManager: SettingsManager
 | `util/DeviceFiles.kt` | Helpers for files on a full tCam's micro-SD card — name-list parsing, path-safety checks, and `saveImage()`'s write-through-`.part`-file pattern, ported from Android's `DeviceFiles`. |
 | `net/CameraDiscovery.kt` | mDNS discovery via [JmDNS](https://github.com/jmdns/jmdns) (the desktop JVM has no built-in mDNS client like Android's `NsdManager`). Binds a separate JmDNS instance to every active non-loopback IPv4 interface and merges results, since a plain `JmDNS.create()` can silently miss cameras on a multi-homed machine. Also used by `CameraViewModel`'s auto-reconnect as a fallback scan after a few failed retries at the last-known IP. |
 | `util/WifiScanner.kt` | Shells out to `nmcli` (Linux) or `netsh` (Windows) for WiFi SSID scanning (no portable desktop WiFi-scan API like Android's `WifiManager`); either path degrades to an empty list on failure rather than crashing. |
+| `util/Firmware.kt` | OTA firmware support: fetches the latest-release JSON from danjuliodesigns.com (`tcam_firmware.json` / `tcam_mini_firmware.json`, chosen by `get_status` Model), downloads the release zip into `~/tCamViewer/Firmware/` and pulls out `tCam.bin`/`tCamMini.bin`, and checks a `.bin`'s ESP-IDF app descriptor (version + project name) so the wrong firmware can't be flashed. `CameraService.updateFirmware()` runs the `fw_update_request` → `get_fw`/`fw_segment` → `cam_info` exchange. |
 | `util/CompositeExport.kt` | Builds the colorized image + header/sidebar/footer chrome (color bar, spotmeter arrow, max/min, gain/emissivity/date-time), ported from Android's `buildShareBitmap()`; saves to `~/tCamViewer/Exports/` (`%USERPROFILE%\tCamViewer\Exports\` on Windows) instead of sharing via `Intent.ACTION_SEND`. |
 
 ### UI Structure
@@ -106,8 +107,9 @@ lateinit var settingsManager: SettingsManager
 - `ui/SettingsScreen.kt` — staged Save/Cancel editing (same pattern as tcamViewer2's Settings tab)
   over camera IP, a Saved Cameras quick-connect list with Auto-connect-on-launch, mDNS "Find tCam
   Devices", palette, units, manual range, shutter sound, spotmeter/region toggle, temperature
-  alerts, and — while connected — AGC/emissivity/gain mode and a WiFi config dialog with SSID
-  scanning (`nmcli`/`netsh`). `ui/App.kt` intercepts a tab switch away from Settings with unsaved
+  alerts, and — while connected — AGC/emissivity/gain mode, a WiFi config dialog with SSID
+  scanning (`nmcli`/`netsh`), and an Update Firmware dialog (`ui/FirmwareUpdateDialog.kt`, from
+  Dan Julio's tCam desktop app). `ui/App.kt` intercepts a tab switch away from Settings with unsaved
   changes.
 - `ui/LibraryScreen.kt` — browses saved `.tjsn`/`.tmjsn`/`.tltjsn` files grouped by date, multi-
   select delete, date-range filter, full-size browse with Export-to-PNG, frame-by-frame video

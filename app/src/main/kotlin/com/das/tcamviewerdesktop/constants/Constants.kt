@@ -98,6 +98,32 @@ object Constants {
     const val CMD_GET_FS_LIST: String = "\u0002{\"cmd\":\"get_filesystem_list\", \"args\": %s}\u0003"
     const val CMD_GET_FS_FILE: String = "\u0002{\"cmd\":\"get_file\", \"args\": %s}\u0003"
 
+    // OTA firmware update. The camera's command buffer is sized for one fw_segment (12,288
+    // bytes), so these stay compact — no pretty-printing whitespace like the other args.
+    const val CMD_FW_UPDATE_REQUEST: String =
+        "\u0002{\"cmd\":\"fw_update_request\",\"args\":{\"length\":%d,\"version\":\"%s\"}}\u0003"
+    const val CMD_FW_SEGMENT: String =
+        "\u0002{\"cmd\":\"fw_segment\",\"args\":{\"start\":%d,\"length\":%d,\"data\":\"%s\"}}\u0003"
+
+    // Latest-firmware descriptors published by Dan Julio ({"version", "location", "description"})
+    const val FIRMWARE_INFO_URL_TCAM: String = "https://danjuliodesigns.com/resources/AppSupport/tcam_firmware.json"
+    const val FIRMWARE_INFO_URL_TCAM_MINI: String =
+        "https://danjuliodesigns.com/resources/AppSupport/tcam_mini_firmware.json"
+
+    // get_status "Model" bits
+    const val MODEL_MASK_NUMBER: Int = 0xFF
+    const val MODEL_NUM_TCAM: Int = 1 // tCam-Mini reports 2 (WiFi) or 3 (Ethernet / tCam-POE)
+    const val MODEL_MASK_OTA: Int = (1 shl 18)
+
+    // cam_info "info_value" status codes
+    const val CAM_INFO_NACK: Int = 0
+    const val CAM_INFO_ACK: Int = 1
+    const val CAM_INFO_UNIMPLEMENTED: Int = 2
+    const val CAM_INFO_BAD_CMD: Int = 3
+    const val CAM_INFO_INTERNAL_ERROR: Int = 4
+    const val CAM_INFO_DEBUG: Int = 5
+    const val CAM_INFO_UPDATE_STATUS: Int = 6
+
     // Filesystem command args (full tCam with micro-SD only; tCam-Mini answers "Unsupported")
     const val ARGS_FS_DIR: String = "{\"dir_name\": \"%s\"}"
     const val ARGS_FS_FILE: String = "{\"dir_name\": \"%s\", \"file_name\": \"%s\"}"

@@ -131,6 +131,7 @@ fun SettingsScreen(
     var showWifiDialog by remember { mutableStateOf(false) }
     var showDiscoveryDialog by remember { mutableStateOf(false) }
     var showAboutDialog by remember { mutableStateOf(false) }
+    var showFirmwareDialog by remember { mutableStateOf(false) }
 
     fun performSave() {
         val cameraAgcOnDevice = cameraConfig?.agcEnabled ?: savedCameraAgc
@@ -202,6 +203,7 @@ fun SettingsScreen(
                     viewModel.fetchWifiInfo()
                     showWifiDialog = true
                 }) { Text("WiFi / Network...") }
+                OutlinedButton(onClick = { showFirmwareDialog = true }) { Text("Update Firmware...") }
                 HorizontalDivider()
             }
 
@@ -360,6 +362,11 @@ fun SettingsScreen(
 
     if (showWifiDialog) {
         WifiConfigDialog(viewModel = viewModel, onDismiss = { showWifiDialog = false })
+    }
+
+    // Kept open across the post-update reboot/reconnect so the result stays visible
+    if (showFirmwareDialog) {
+        FirmwareUpdateDialog(viewModel = viewModel, onDismiss = { showFirmwareDialog = false })
     }
 
     if (showDiscoveryDialog) {

@@ -49,7 +49,9 @@ The UI has four tabs behind a `NavigationRail` (`ui/App.kt`):
   button, palette, units, manual range, shutter sound, spotmeter/region toggle, temperature
   alerts, and — while connected — AGC/emissivity/gain mode and a WiFi config dialog with SSID
   scanning (`nmcli` on Linux, `netsh` on Windows — gracefully falls back to an empty, manually-
-  typeable list if the platform tool is unavailable). Switching tabs away from Settings with
+  typeable list if the platform tool is unavailable), plus **Update Firmware...**, which checks
+  danjuliodesigns.com for the latest tCam / tCam-Mini release and installs it over the air
+  (or installs a `.bin` you pick yourself). Switching tabs away from Settings with
   unsaved changes asks to confirm.
 - **Library** (`ui/LibraryScreen.kt`) — browses saved `.tjsn` frames, `.tmjsn` recordings, and
   `.tltjsn` time lapses grouped by date folder, multi-select delete, a date-range filter, a
