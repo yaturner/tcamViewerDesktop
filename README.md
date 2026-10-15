@@ -1,8 +1,8 @@
 # tcamViewerDesktop
 
-Linux/desktop viewer for the [tCam](https://github.com/danjulio/tCam) thermal imaging camera —
-a Compose Multiplatform Desktop port of [tcamViewer2](https://github.com/yaturner/tcamViewer2)
-(the Android app).
+Desktop viewer (Linux and Windows) for the [tCam](https://github.com/danjulio/tCam) thermal
+imaging camera — a Compose Multiplatform Desktop port of
+[tcamViewer2](https://github.com/yaturner/tcamViewer2) (the Android app).
 
 Connects to a tCam over WiFi/TCP (port 5001), decodes its JSON-framed radiometric + telemetry
 frames, applies a color palette, and displays live thermal video with spotmeter/region
@@ -14,11 +14,17 @@ temperature readout.
 ./gradlew run
 ```
 
-## Package a native installer (.deb / AppImage)
+## Package a native installer
 
 ```bash
+# Linux
 ./gradlew packageDeb
+./gradlew packageRpm
 ./gradlew packageAppImage
+
+# Windows (run on a Windows machine; requires WiX Toolset for .msi, Inno Setup for .exe)
+gradlew.bat packageMsi
+gradlew.bat packageExe
 ```
 
 ## Status
@@ -42,7 +48,9 @@ The UI has four tabs behind a `NavigationRail` (`ui/App.kt`):
   most-recent first) with an Auto-connect-on-launch toggle, an mDNS "Find tCam Devices" search
   button, palette, units, manual range, shutter sound, spotmeter/region toggle, temperature
   alerts, and — while connected — AGC/emissivity/gain mode and a WiFi config dialog with SSID
-  scanning (`nmcli`). Switching tabs away from Settings with unsaved changes asks to confirm.
+  scanning (`nmcli` on Linux, `netsh` on Windows — gracefully falls back to an empty, manually-
+  typeable list if the platform tool is unavailable). Switching tabs away from Settings with
+  unsaved changes asks to confirm.
 - **Library** (`ui/LibraryScreen.kt`) — browses saved `.tjsn` frames, `.tmjsn` recordings, and
   `.tltjsn` time lapses grouped by date folder, multi-select delete, a date-range filter, a
   full-size browse view with Export-to-PNG, frame-by-frame video playback
@@ -59,17 +67,19 @@ silently miss cameras reachable only on the other, so discovery binds a separate
 to every active non-loopback IPv4 interface and merges the results. It's also wired into
 `CameraViewModel`'s auto-reconnect: after retrying the last-known IP a few times, it falls back
 to a fresh mDNS scan in case the camera's DHCP lease changed. WiFi SSID scanning
-(`util/WifiScanner.kt`) shells out to `nmcli` for the same reason — no portable desktop WiFi-scan
-API exists the way Android's WifiManager provides one.
+(`util/WifiScanner.kt`) shells out to `nmcli` (Linux) or `netsh` (Windows) for the same reason —
+no portable desktop WiFi-scan API exists the way Android's WifiManager provides one.
 
 Composite image export (`util/CompositeExport.kt`) — the colorized image plus header/sidebar
 (color bar, spotmeter arrow, max/min)/footer (gain, emissivity, date/time) chrome — is ported
-from Android's `buildShareBitmap()`, saving to `~/tCamViewer/Exports/` instead of Android's
-gallery share sheet (no desktop equivalent of `Intent.ACTION_SEND`).
+from Android's `buildShareBitmap()`, saving to `~/tCamViewer/Exports/` (`%USERPROFILE%\tCamViewer\
+Exports\` on Windows) instead of Android's gallery share sheet (no desktop equivalent of
+`Intent.ACTION_SEND`).
 
 **Not yet ported** from the Android app:
 - MP4 export/share for recordings and time lapses (Android's `VideoExporter` uses
   `MediaCodec`; no portable desktop video encoder wired up)
 - Fullscreen toggle in the video player
 
-Saved files land under `~/tCamViewer/{Pictures,Movies,Charts,Exports}/MM_DD_YYYY/`.
+Saved files land under `~/tCamViewer/{Pictures,Movies,Charts,Exports}/MM_DD_YYYY/` on Linux, or
+`%USERPROFILE%\tCamViewer\{Pictures,Movies,Charts,Exports}\MM_DD_YYYY\` on Windows.

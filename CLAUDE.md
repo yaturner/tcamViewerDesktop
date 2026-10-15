@@ -4,11 +4,11 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Linux/desktop viewer for the [tCam](https://github.com/danjulio/tCam) thermal imaging camera — a
-Compose Multiplatform Desktop port of [tcamViewer2](https://github.com/yaturner/tcamViewer2) (the
-Android app). Connects to a tCam over WiFi/TCP (port 5001), decodes its JSON-framed radiometric +
-telemetry frames, applies a color palette, and displays live thermal video with spotmeter/region
-temperature readout.
+Desktop viewer (Linux and Windows) for the [tCam](https://github.com/danjulio/tCam) thermal imaging
+camera — a Compose Multiplatform Desktop port of
+[tcamViewer2](https://github.com/yaturner/tcamViewer2) (the Android app). Connects to a tCam over
+WiFi/TCP (port 5001), decodes its JSON-framed radiometric + telemetry frames, applies a color
+palette, and displays live thermal video with spotmeter/region temperature readout.
 
 This codebase is deliberately kept in lockstep with tcamViewer2: most classes are line-for-line
 ports (same package-relative structure, same method names) with only the Android-specific plumbing
@@ -28,8 +28,10 @@ class/method naming rather than inventing new patterns — see "Porting from tca
 ./gradlew test
 
 # Package a native installer
-./gradlew packageDeb
-./gradlew packageAppImage
+./gradlew packageDeb        # Linux
+./gradlew packageAppImage   # Linux
+gradlew.bat packageMsi      # Windows (requires WiX Toolset on PATH)
+gradlew.bat packageExe      # Windows (requires Inno Setup on PATH)
 ```
 
 There is no linter/formatter task configured (no Spotless/ktlint), and no test sources exist yet.
@@ -92,8 +94,8 @@ lateinit var settingsManager: SettingsManager
 | `util/SettingsManager.kt` | Desktop stand-in for tcamViewer2's DataStore-backed `SettingsDataManager` — same key set and `Flow`-based read API, backed by `java.util.prefs.Preferences` instead of DataStore. Also holds the Saved Cameras list (most-recent first) and the Auto-connect-on-launch flag. |
 | `util/DeviceFiles.kt` | Helpers for files on a full tCam's micro-SD card — name-list parsing, path-safety checks, and `saveImage()`'s write-through-`.part`-file pattern, ported from Android's `DeviceFiles`. |
 | `net/CameraDiscovery.kt` | mDNS discovery via [JmDNS](https://github.com/jmdns/jmdns) (the desktop JVM has no built-in mDNS client like Android's `NsdManager`). Binds a separate JmDNS instance to every active non-loopback IPv4 interface and merges results, since a plain `JmDNS.create()` can silently miss cameras on a multi-homed machine. Also used by `CameraViewModel`'s auto-reconnect as a fallback scan after a few failed retries at the last-known IP. |
-| `util/WifiScanner.kt` | Shells out to `nmcli` for WiFi SSID scanning (no portable desktop WiFi-scan API like Android's `WifiManager`). |
-| `util/CompositeExport.kt` | Builds the colorized image + header/sidebar/footer chrome (color bar, spotmeter arrow, max/min, gain/emissivity/date-time), ported from Android's `buildShareBitmap()`; saves to `~/tCamViewer/Exports/` instead of sharing via `Intent.ACTION_SEND`. |
+| `util/WifiScanner.kt` | Shells out to `nmcli` (Linux) or `netsh` (Windows) for WiFi SSID scanning (no portable desktop WiFi-scan API like Android's `WifiManager`); either path degrades to an empty list on failure rather than crashing. |
+| `util/CompositeExport.kt` | Builds the colorized image + header/sidebar/footer chrome (color bar, spotmeter arrow, max/min, gain/emissivity/date-time), ported from Android's `buildShareBitmap()`; saves to `~/tCamViewer/Exports/` (`%USERPROFILE%\tCamViewer\Exports\` on Windows) instead of sharing via `Intent.ACTION_SEND`. |
 
 ### UI Structure
 
@@ -104,15 +106,17 @@ lateinit var settingsManager: SettingsManager
 - `ui/SettingsScreen.kt` — staged Save/Cancel editing (same pattern as tcamViewer2's Settings tab)
   over camera IP, a Saved Cameras quick-connect list with Auto-connect-on-launch, mDNS "Find tCam
   Devices", palette, units, manual range, shutter sound, spotmeter/region toggle, temperature
-  alerts, and — while connected — AGC/emissivity/gain mode and a WiFi config dialog with `nmcli`
-  SSID scanning. `ui/App.kt` intercepts a tab switch away from Settings with unsaved changes.
+  alerts, and — while connected — AGC/emissivity/gain mode and a WiFi config dialog with SSID
+  scanning (`nmcli`/`netsh`). `ui/App.kt` intercepts a tab switch away from Settings with unsaved
+  changes.
 - `ui/LibraryScreen.kt` — browses saved `.tjsn`/`.tmjsn`/`.tltjsn` files grouped by date, multi-
   select delete, date-range filter, full-size browse with Export-to-PNG, frame-by-frame video
   playback (`ui/VideoPlayerWindow.kt`) with skip ±5, play/pause, and speed control, and (full tCam
   only) "Download from camera" (`ui/CameraDownloadWindow.kt`) to pull files off its SD card.
 - `ui/ChartsScreen.kt` — browses saved `.tchart` files the same way, with a full chart view.
 
-Saved files land under `~/tCamViewer/{Pictures,Movies,Charts,Exports}/MM_DD_YYYY/`.
+Saved files land under `~/tCamViewer/{Pictures,Movies,Charts,Exports}/MM_DD_YYYY/` on Linux, or
+`%USERPROFILE%\tCamViewer\{Pictures,Movies,Charts,Exports}\MM_DD_YYYY\` on Windows.
 
 ### Porting from tcamViewer2
 
